@@ -1,6 +1,0 @@
-Flask
-gunicorn
-huggingface_hub
-gradio_client
-Pillow
-Werkzeug
