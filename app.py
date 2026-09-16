@@ -37,118 +37,216 @@ GENERATE_ALL_COST = 34
 
 
 # ==========================================
-# DATABASE
+# DATABASE CONNECTION
+# ==========================================
+
+def get_db():
+
+    connection = sqlite3.connect(
+        DATABASE,
+        timeout=30,
+        check_same_thread=False
+    )
+
+    connection.row_factory = sqlite3.Row
+
+    connection.execute(
+        "PRAGMA busy_timeout = 30000"
+    )
+
+    connection.execute(
+        "PRAGMA journal_mode = WAL"
+    )
+
+    connection.execute(
+        "PRAGMA synchronous = NORMAL"
+    )
+
+    return connection
+
+
+# ==========================================
+# DATABASE INITIALIZATION
 # ==========================================
 
 def init_database():
 
-    connection = sqlite3.connect(DATABASE)
-    cursor = connection.cursor()
+    connection = get_db()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            credits INTEGER DEFAULT 100
+    try:
+
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                credits INTEGER DEFAULT 100
+            )
+        """)
+
+        cursor.execute(
+            "PRAGMA table_info(users)"
         )
-    """)
 
-    connection.commit()
-    connection.close()
+        columns = [
+            row["name"]
+            for row in cursor.fetchall()
+        ]
+
+        if "credits" not in columns:
+
+            cursor.execute("""
+                ALTER TABLE users
+                ADD COLUMN credits INTEGER DEFAULT 100
+            """)
+
+        connection.commit()
+
+    finally:
+
+        connection.close()
 
 
 init_database()
 
 
+# ==========================================
+# GET USER
+# ==========================================
+
 def get_user(user_id):
 
-    connection = sqlite3.connect(DATABASE)
-    cursor = connection.cursor()
+    connection = get_db()
 
-    cursor.execute(
-        """
-        SELECT id, username, credits
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,)
-    )
+    try:
 
-    user = cursor.fetchone()
+        cursor = connection.cursor()
 
-    connection.close()
+        cursor.execute(
+            """
+            SELECT id, username, credits
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,)
+        )
 
-    return user
+        user = cursor.fetchone()
 
+        if user:
+
+            return (
+                user["id"],
+                user["username"],
+                user["credits"]
+            )
+
+        return None
+
+    finally:
+
+        connection.close()
+
+
+# ==========================================
+# GET CREDITS
+# ==========================================
 
 def get_credits(user_id):
 
     user = get_user(user_id)
 
     if user:
+
         return user[2]
 
     return 0
 
 
+# ==========================================
+# USE CREDITS
+# ==========================================
+
 def use_credits(user_id, amount):
 
-    connection = sqlite3.connect(DATABASE)
-    cursor = connection.cursor()
+    connection = get_db()
 
-    cursor.execute(
-        """
-        SELECT credits
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,)
-    )
+    try:
 
-    row = cursor.fetchone()
+        cursor = connection.cursor()
 
-    if not row:
+        cursor.execute(
+            """
+            UPDATE users
+            SET credits = credits - ?
+            WHERE id = ?
+            AND credits >= ?
+            """,
+            (
+                amount,
+                user_id,
+                amount
+            )
+        )
+
+        if cursor.rowcount != 1:
+
+            connection.rollback()
+
+            return False
+
+        connection.commit()
+
+        return True
+
+    except Exception:
+
+        connection.rollback()
+
+        raise
+
+    finally:
+
         connection.close()
-        return False
 
-    credits = row[0]
 
-    if credits < amount:
-        connection.close()
-        return False
-
-    cursor.execute(
-        """
-        UPDATE users
-        SET credits = credits - ?
-        WHERE id = ?
-        """,
-        (amount, user_id)
-    )
-
-    connection.commit()
-    connection.close()
-
-    return True
-
+# ==========================================
+# ADD CREDITS
+# ==========================================
 
 def add_credits(user_id, amount):
 
-    connection = sqlite3.connect(DATABASE)
-    cursor = connection.cursor()
+    connection = get_db()
 
-    cursor.execute(
-        """
-        UPDATE users
-        SET credits = credits + ?
-        WHERE id = ?
-        """,
-        (amount, user_id)
-    )
+    try:
 
-    connection.commit()
-    connection.close()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            UPDATE users
+            SET credits = credits + ?
+            WHERE id = ?
+            """,
+            (
+                amount,
+                user_id
+            )
+        )
+
+        connection.commit()
+
+    except Exception:
+
+        connection.rollback()
+
+        raise
+
+    finally:
+
+        connection.close()
 
 
 # ==========================================
@@ -194,6 +292,8 @@ def home():
 )
 def register():
 
+    connection = None
+
     try:
 
         data = request.get_json() or {}
@@ -226,9 +326,7 @@ def register():
             password
         )
 
-        connection = sqlite3.connect(
-            DATABASE
-        )
+        connection = get_db()
 
         cursor = connection.cursor()
 
@@ -246,7 +344,6 @@ def register():
         )
 
         connection.commit()
-        connection.close()
 
         return jsonify({
 
@@ -260,12 +357,20 @@ def register():
 
     except sqlite3.IntegrityError:
 
+        if connection:
+
+            connection.rollback()
+
         return jsonify({
             "error":
             "Username already exists"
         }), 409
 
     except Exception as e:
+
+        if connection:
+
+            connection.rollback()
 
         print(
             "REGISTER ERROR:",
@@ -276,6 +381,12 @@ def register():
             "error":
             str(e)
         }), 500
+
+    finally:
+
+        if connection:
+
+            connection.close()
 
 
 # ==========================================
@@ -309,24 +420,26 @@ def login():
                 "Username and password are required"
             }), 400
 
-        connection = sqlite3.connect(
-            DATABASE
-        )
+        connection = get_db()
 
-        cursor = connection.cursor()
+        try:
 
-        cursor.execute(
-            """
-            SELECT id, username, password, credits
-            FROM users
-            WHERE username = ?
-            """,
-            (username,)
-        )
+            cursor = connection.cursor()
 
-        user = cursor.fetchone()
+            cursor.execute(
+                """
+                SELECT id, username, password, credits
+                FROM users
+                WHERE username = ?
+                """,
+                (username,)
+            )
 
-        connection.close()
+            user = cursor.fetchone()
+
+        finally:
+
+            connection.close()
 
         if not user:
 
@@ -335,10 +448,10 @@ def login():
                 "Invalid username or password"
             }), 401
 
-        user_id = user[0]
-        stored_username = user[1]
-        stored_password = user[2]
-        credits = user[3]
+        user_id = user["id"]
+        stored_username = user["username"]
+        stored_password = user["password"]
+        credits = user["credits"]
 
         if not check_password_hash(
             stored_password,
@@ -742,45 +855,60 @@ def generated_audio():
 
 def extract_video_path(value):
 
-    print("VIDEO VALUE TYPE:", type(value))
-    print("VIDEO VALUE:", value)
+    print(
+        "VIDEO VALUE TYPE:",
+        type(value)
+    )
+
+    print(
+        "VIDEO VALUE:",
+        value
+    )
 
     # String path
     if isinstance(value, str):
+
         return value
 
     # Gradio dictionary
     if isinstance(value, dict):
 
         if value.get("video"):
+
             return extract_video_path(
                 value["video"]
             )
 
         if value.get("path"):
+
             return extract_video_path(
                 value["path"]
             )
 
         if value.get("filepath"):
+
             return extract_video_path(
                 value["filepath"]
             )
 
         if value.get("url"):
+
             return value["url"]
 
         return None
 
     # Path object
     if hasattr(value, "__fspath__"):
+
         return os.fspath(value)
 
     # FileData object
     if hasattr(value, "path"):
+
         return value.path
 
     if hasattr(value, "url"):
+
         return value.url
 
     return None
@@ -1001,10 +1129,19 @@ def video():
     except Exception as e:
 
         # Generation fail होने पर credits वापस
-        add_credits(
-            user_id,
-            VIDEO_COST
-        )
+        try:
+
+            add_credits(
+                user_id,
+                VIDEO_COST
+            )
+
+        except Exception as credit_error:
+
+            print(
+                "CREDIT REFUND ERROR:",
+                str(credit_error)
+            )
 
         print()
         print("==========================================")
