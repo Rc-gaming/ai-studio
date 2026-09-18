@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My AI Studio</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+body{
+    background:#0b1020;
+    color:#fff;
+    min-height:100vh;
+}
+
+button{
+    cursor:pointer;
+}
+
+.hidden{
+    display:none !important;
+}
+
+/* AUTH */
+
+.auth{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    background:
+        radial-gradient(circle at top left,#263a73 0%,transparent 35%),
+        radial-gradient(circle at bottom right,#401d5e 0%,transparent 35%),
+        #0b1020;
+}
+
+.auth-card{
+    width:100%;
+    max-width:430px;
+    background:rgba(20,27,49,.94);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:24px;
+    padding:35px;
+    box-shadow:0 25px 80px rgba(0,0,0,.45);
+}
+
+.logo{
+    text-align:center;
+    font-size:30px;
+    font-weight:800;
+    margin-bottom:8px;
+}
+
+.logo span{
+    color:#7c5cff;
+}
+
+.subtitle{
+    text-align:center;
+    color:#9ca7c3;
+    margin-bottom:28px;
+}
+
+.auth-card h2{
+    margin-bottom:18px;
+}
+
+.input{
+    width:100%;
+    padding:14px 15px;
+    margin-bottom:14px;
+    border-radius:12px;
+    border:1px solid #303a58;
+    background:#11182b;
+    color:#fff;
+    outline:none;
+    font-size:15px;
+}
+
+.input:focus{
+    border-color:#7c5cff;
+}
+
+.primary-btn{
+    width:100%;
+    border:none;
+    padding:14px;
+    border-radius:12px;
+    background:linear-gradient(135deg,#7c5cff,#5b8cff);
+    color:white;
+    font-size:16px;
+    font-weight:700;
+    margin-top:4px;
+}
+
+.secondary-btn{
+    width:100%;
+    border:1px solid #394463;
+    padding:13px;
+    border-radius:12px;
+    background:#151d33;
+    color:white;
+    font-size:15px;
+    margin-top:12px;
+}
+
+.auth-switch{
+    text-align:center;
+    margin-top:20px;
+    color:#9ca7c3;
+}
+
+.auth-switch button{
+    background:none;
+    border:none;
+    color:#8d7aff;
+    font-weight:700;
+}
+
+/* DASHBOARD */
+
+#studio{
+    min-height:100vh;
+    display:flex;
+}
+
+.sidebar{
+    width:245px;
+    background:#0e1528;
+    border-right:1px solid #202943;
+    padding:22px 15px;
+    position:fixed;
+    left:0;
+    top:0;
+    bottom:0;
+}
+
+.side-logo{
+    font-size:22px;
+    font-weight:800;
+    padding:8px 12px 25px;
+}
+
+.side-logo span{
+    color:#7c5cff;
+}
+
+.nav{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+}
+
+.nav button{
+    width:100%;
+    text-align:left;
+    border:none;
+    background:transparent;
+    color:#9da8c2;
+    padding:13px 14px;
+    border-radius:11px;
+    font-size:15px;
+}
+
+.nav button:hover,
+.nav button.active{
+    background:#1b2541;
+    color:#fff;
+}
+
+.main{
+    margin-left:245px;
+    width:calc(100% - 245px);
+    min-height:100vh;
+}
+
+.topbar{
+    height:72px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 28px;
+    border-bottom:1px solid #202943;
+    background:#0c1325;
+    position:sticky;
+    top:0;
+    z-index:5;
+}
+
+.topbar-title{
+    font-size:21px;
+    font-weight:700;
+}
+
+.credit-pill{
+    background:#19233d;
+    border:1px solid #303c60;
+    padding:9px 15px;
+    border-radius:30px;
+    color:#dce2f2;
+    font-weight:700;
+}
+
+.credit-pill span{
+    color:#8d7aff;
+}
+
+.content{
+    padding:30px;
+    max-width:1200px;
+    margin:auto;
+}
+
+.page-title{
+    font-size:32px;
+    margin-bottom:8px;
+}
+
+.page-description{
+    color:#8f9ab5;
+    margin-bottom:28px;
+}
+
+/* CARDS */
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+}
+
+.card{
+    background:#121a30;
+    border:1px solid #252f4b;
+    border-radius:18px;
+    padding:22px;
+}
+
+.card-icon{
+    font-size:30px;
+    margin-bottom:14px;
+}
+
+.card h3{
+    margin-bottom:8px;
+}
+
+.card p{
+    color:#8f9ab5;
+    line-height:1.5;
+    font-size:14px;
+}
+
+.tool-card{
+    background:#121a30;
+    border:1px solid #252f4b;
+    border-radius:20px;
+    padding:25px;
+    max-width:900px;
+}
+
+.tool-card h2{
+    margin-bottom:8px;
+}
+
+.tool-description{
+    color:#8f9ab5;
+    margin-bottom:20px;
+}
+
+textarea{
+    width:100%;
+    min-height:150px;
+    resize:vertical;
+    background:#0d1528;
+    color:#fff;
+    border:1px solid #303b59;
+    border-radius:14px;
+    padding:15px;
+    outline:none;
+    font-size:15px;
+    line-height:1.5;
+}
+
+textarea:focus{
+    border-color:#7c5cff;
+}
+
+.generate-btn{
+    margin-top:15px;
+    border:none;
+    border-radius:12px;
+    padding:13px 20px;
+    background:linear-gradient(135deg,#7c5cff,#5b8cff);
+    color:white;
+    font-weight:700;
+    font-size:15px;
+}
+
+.generate-btn:disabled{
+    opacity:.6;
+    cursor:not-allowed;
+}
+
+.status{
+    margin-top:15px;
+    min-height:20px;
+    color:#9ca7c3;
+}
+
+.success{
+    color:#6ee7a8;
+}
+
+.error{
+    color:#ff7f91;
+}
+
+.output{
+    margin-top:22px;
+}
+
+.output img,
+.output video{
+    width:100%;
+    max-width:800px;
+    border-radius:15px;
+    display:block;
+    background:#080c17;
+}
+
+.output audio{
+    width:100%;
+    max-width:700px;
+}
+
+/* RECHARGE */
+
+.packages{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+}
+
+.package{
+    background:#121a30;
+    border:1px solid #293452;
+    border-radius:18px;
+    padding:25px;
+    text-align:center;
+}
+
+.package h2{
+    font-size:30px;
+    margin:10px 0;
+}
+
+.package p{
+    color:#9ca7c3;
+    margin-bottom:18px;
+}
+
+.package button{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:10px;
+    background:#283657;
+    color:#fff;
+    font-weight:700;
+}
+
+/* PROFILE */
+
+.profile-box{
+    max-width:700px;
+    background:#121a30;
+    border:1px solid #252f4b;
+    border-radius:20px;
+    padding:25px;
+}
+
+.profile-row{
+    display:flex;
+    justify-content:space-between;
+    padding:16px 0;
+    border-bottom:1px solid #252f4b;
+}
+
+.profile-row:last-child{
+    border-bottom:none;
+}
+
+.profile-label{
+    color:#8f9ab5;
+}
+
+/* MOBILE */
+
+@media(max-width:850px){
+
+    .sidebar{
+        width:190px;
+    }
+
+    .main{
+        margin-left:190px;
+        width:calc(100% - 190px);
+    }
+
+    .grid,
+    .packages{
+        grid-template-columns:1fr;
+    }
+
+    .content{
+        padding:20px;
+    }
+}
+
+@media(max-width:600px){
+
+    .sidebar{
+        position:fixed;
+        width:100%;
+        height:auto;
+        bottom:auto;
+        padding:8px;
+        z-index:10;
+    }
+
+    .side-logo{
+        display:none;
+    }
+
+    .nav{
+        flex-direction:row;
+        overflow-x:auto;
+    }
+
+    .nav button{
+        white-space:nowrap;
+        width:auto;
+        padding:10px 12px;
+    }
+
+    .main{
+        margin-left:0;
+        width:100%;
+        padding-top:55px;
+    }
+
+    .topbar{
+        padding:0 15px;
+    }
+
+    .topbar-title{
+        font-size:17px;
+    }
+
+    .content{
+        padding:18px;
+    }
+
+    .page-title{
+        font-size:27px;
+    }
+
+    .auth-card{
+        padding:25px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<section id="auth" class="auth">
+
+    <div class="auth-card">
+
+        <div class="logo">
+            My <span>AI Studio</span>
+        </div>
+
+        <div class="subtitle">
+            Create images, videos and audio with AI
+        </div>
+
+        <!-- LOGIN -->
+
+        <div id="loginBox">
+
+            <h2>Welcome Back</h2>
+
+            <input
+                id="loginUsername"
+                class="input"
+                type="text"
+                placeholder="Username"
+            >
+
+            <input
+                id="loginPassword"
+                class="input"
+                type="password"
+                placeholder="Password"
+            >
+
+            <button
+                class="primary-btn"
+                onclick="login()"
+            >
+                Login
+            </button>
+
+            <div class="auth-switch">
+                Don't have an account?
+                <button onclick="showRegister()">
+                    Register
+                </button>
+            </div>
+
+        </div>
+
+        <!-- REGISTER -->
+
+        <div id="registerBox" class="hidden">
+
+            <h2>Create Account</h2>
+
+            <input
+                id="registerUsername"
+                class="input"
+                type="text"
+                placeholder="Username"
+            >
+
+            <input
+                id="registerPassword"
+                class="input"
+                type="password"
+                placeholder="Password"
+            >
+
+            <button
+                class="primary-btn"
+                onclick="register()"
+            >
+                Register
+            </button>
+
+            <div class="auth-switch">
+                Already have an account?
+                <button onclick="showLogin()">
+                    Login
+                </button>
+            </div>
+
+        </div>
+
+        <div id="authMessage" class="status"></div>
+
+    </div>
+
+</section>
+
+
+<section id="studio" class="hidden">
+
+    <aside class="sidebar">
+
+        <div class="side-logo">
+            My <span>AI Studio</span>
+        </div>
+
+        <div class="nav">
+
+            <button
+                id="nav-dashboard"
+                class="active"
+                onclick="showPage('dashboard')"
+            >
+                🏠 Dashboard
+            </button>
+
+            <button
+                id="nav-image"
+                onclick="showPage('image')"
+            >
+                🖼️ Image
+            </button>
+
+            <button
+                id="nav-video"
+                onclick="showPage('video')"
+            >
+                🎬 Video
+            </button>
+
+            <button
+                id="nav-audio"
+                onclick="showPage('audio')"
+            >
+                🔊 Audio
+            </button>
+
+            <button
+                id="nav-recharge"
+                onclick="showPage('recharge')"
+            >
+                💳 Recharge
+            </button>
+
+            <button
+                id="nav-profile"
+                onclick="showPage('profile')"
+            >
+                👤 Profile
+            </button>
+
+            <button onclick="logout()">
+                🚪 Logout
+            </button>
+
+        </div>
+
+    </aside>
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div class="topbar-title">
+                My AI Studio
+            </div>
+
+            <div class="credit-pill">
+                Credits:
+                <span id="creditCount">100</span>
+            </div>
+
+        </header>
+
+        <div class="content">
+
+            <!-- DASHBOARD -->
+
+            <section id="page-dashboard">
+
+                <h1 class="page-title">
+                    AI Studio Dashboard
+                </h1>
+
+                <p class="page-description">
+                    Create AI images, videos and audio from one place.
+                </p>
+
+                <div class="grid">
+
+                    <div class="card">
+                        <div class="card-icon">🖼️</div>
+                        <h3>AI Image</h3>
+                        <p>
+                            Turn your text prompt into an AI-generated image.
+                            Cost: 5 credits.
+                        </p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-icon">🎬</div>
+                        <h3>AI Video</h3>
+                        <p>
+                            Generate short AI videos from your text prompt.
+                            Cost: 21 credits.
+                        </p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-icon">🔊</div>
+                        <h3>AI Audio</h3>
+                        <p>
+                            Convert your text into natural AI speech.
+                            Cost: 8 credits.
+                        </p>
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- IMAGE -->
+
+            <section id="page-image" class="hidden">
+
+                <h1 class="page-title">
+                    AI Image Generator
+                </h1>
+
+                <p class="page-description">
+                    Describe the image you want to create.
+                </p>
+
+                <div class="tool-card">
+
+                    <h2>Text to Image</h2>
+
+                    <p class="tool-description">
+                        Powered by FLUX AI.
+                    </p>
+
+                    <textarea
+                        id="imagePrompt"
+                        placeholder="Example: A cinematic mountain landscape at sunset, ultra detailed..."
+                    ></textarea>
+
+                    <button
+                        id="imageButton"
+                        class="generate-btn"
+                        onclick="generateImage()"
+                    >
+                        Generate Image — 5 Credits
+                    </button>
+
+                    <div
+                        id="imageStatus"
+                        class="status"
+                    ></div>
+
+                    <div
+                        id="imageOutput"
+                        class="output"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- VIDEO -->
+
+            <section id="page-video" class="hidden">
+
+                <h1 class="page-title">
+                    AI Video Generator
+                </h1>
+
+                <p class="page-description">
+                    Create a short AI video from your prompt.
+                </p>
+
+                <div class="tool-card">
+
+                    <h2>Text to Video</h2>
+
+                    <p class="tool-description">
+                        High-quality short video generation.
+                        Cost: 21 credits.
+                    </p>
+
+                    <textarea
+                        id="videoPrompt"
+                        placeholder="Example: A cinematic shot of a futuristic city at night, flying cars, realistic motion..."
+                    ></textarea>
+
+                    <button
+                        id="videoButton"
+                        class="generate-btn"
+                        onclick="generateVideo()"
+                    >
+                        Generate Video — 21 Credits
+                    </button>
+
+                    <div
+                        id="videoStatus"
+                        class="status"
+                    ></div>
+
+                    <div
+                        id="videoOutput"
+                        class="output"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- AUDIO -->
+
+            <section id="page-audio" class="hidden">
+
+                <h1 class="page-title">
+                    AI Audio Generator
+                </h1>
+
+                <p class="page-description">
+                    Convert your text into AI speech.
+                </p>
+
+                <div class="tool-card">
+
+                    <h2>Text to Speech</h2>
+
+                    <p class="tool-description">
+                        Natural AI voice generation.
+                        Cost: 8 credits.
+                    </p>
+
+                    <textarea
+                        id="audioText"
+                        placeholder="Type the text you want to convert into speech..."
+                    ></textarea>
+
+                    <button
+                        id="audioButton"
+                        class="generate-btn"
+                        onclick="generateAudio()"
+                    >
+                        Generate Audio — 8 Credits
+                    </button>
+
+                    <div
+                        id="audioStatus"
+                        class="status"
+                    ></div>
+
+                    <div
+                        id="audioOutput"
+                        class="output"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- RECHARGE -->
+
+            <section id="page-recharge" class="hidden">
+
+                <h1 class="page-title">
+                    Recharge Credits
+                </h1>
+
+                <p class="page-description">
+                    Choose a credit package.
+                </p>
+
+                <div class="packages">
+
+                    <div class="package">
+                        <div class="card-icon">⚡</div>
+                        <h3>Starter</h3>
+                        <h2>100</h2>
+                        <p>Credits</p>
+                        <button onclick="recharge()">
+                            Recharge
+                        </button>
+                    </div>
+
+                    <div class="package">
+                        <div class="card-icon">🚀</div>
+                        <h3>Pro</h3>
+                        <h2>500</h2>
+                        <p>Credits</p>
+                        <button onclick="recharge()">
+                            Recharge
+                        </button>
+                    </div>
+
+                    <div class="package">
+                        <div class="card-icon">🔥</div>
+                        <h3>Business</h3>
+                        <h2>1000</h2>
+                        <p>Credits</p>
+                        <button onclick="recharge()">
+                            Recharge
+                        </button>
+                    </div>
+
+                </div>
+
+                <div
+                    id="rechargeStatus"
+                    class="status"
+                ></div>
+
+            </section>
+
+
+            <!-- PROFILE -->
+
+            <section id="page-profile" class="hidden">
+
+                <h1 class="page-title">
+                    Profile
+                </h1>
+
+                <p class="page-description">
+                    Your account information and generation costs.
+                </p>
+
+                <div class="profile-box">
+
+                    <div class="profile-row">
+                        <span class="profile-label">
+                            Username
+                        </span>
+                        <strong id="profileUsername">
+                            -
+                        </strong>
+                    </div>
+
+                    <div class="profile-row">
+                        <span class="profile-label">
+                            Credits
+                        </span>
+                        <strong id="profileCredits">
+                            -
+                        </strong>
+                    </div>
+
+                    <div class="profile-row">
+                        <span class="profile-label">
+                            Image Generation
+                        </span>
+                        <strong>
+                            5 Credits
+                        </strong>
+                    </div>
+
+                    <div class="profile-row">
+                        <span class="profile-label">
+                            Audio Generation
+                        </span>
+                        <strong>
+                            8 Credits
+                        </strong>
+                    </div>
+
+                    <div class="profile-row">
+                        <span class="profile-label">
+                            Video Generation
+                        </span>
+                        <strong>
+                            21 Credits
+                        </strong>
+                    </div>
+
+                </div>
+
+            </section>
+            <!-- AUDIO GENERATOR -->
+
+            <section id="page-audio" class="hidden">
+
+                <h1 class="page-title">
+                    AI Audio Generator
+                </h1>
+
+                <p class="page-description">
+                    Convert your text into AI speech.
+                </p>
+
+                <div class="tool-card">
+
+                    <h2>
+                        Text to Speech
+                    </h2>
+
+                    <p class="tool-description">
+                        Natural AI voice generation.
+                        Cost: 8 credits.
+                    </p>
+
+                    <textarea
+                        id="audioText"
+                        placeholder="Type the text you want to convert into speech..."
+                    ></textarea>
+
+                    <button
+                        id="audioButton"
+                        class="generate-btn"
+                        onclick="generateAudio()"
+                    >
+                        Generate Audio — 8 Credits
+                    </button>
+
+                    <div
+                        id="audioStatus"
+                        class="status"
+                    ></div>
+
+                    <div
+                        id="audioOutput"
+                        class="output"
+                    ></div>
+
+                </div>
+
+            </section>
+
+
+            <!-- RECHARGE -->
+
+            <section id="page-recharge" class="hidden">
+
+                <h1 class="page-title">
+                    Recharge Credits
+                </h1>
+
+                <p class="page-description">
+                    Choose a credit package.
+                </p>
+
+                <div class="packages">
+
+                    <div class="package">
+
+                        <div class="card-icon">
+                            ⚡
+                        </div>
+
+                        <h3>
+                            Starter
+                        </h3>
+
+                        <h2>
+                            100
+                        </h2>
+
+                        <p>
+                            Credits
+                        </p>
+
+                        <button onclick="recharge()">
+                            Recharge
+                        </button>
+
+                    </div>
+
+
+                    <div class="package">
+
+                        <div class="card-icon">
+                            🚀
+                        </div>
+
+                        <h3>
+                            Pro
+                        </h3>
+
+                        <h2>
+                            500
+                        </h2>
+
+                        <p>
+                            Credits
+                        </p>
+
+                        <button onclick="recharge()">
+                            Recharge
+                        </button>
+
+                    </div>
+
+
+                    <div class="package">
+
+                        <div class="card-icon">
+                            🔥
+                        </div>
+
+                        <h3>
+                            Business
+                        </h3>
+
+                        <h2>
+                            1000
+                        </h2>
+
+                        <p>
+                            Credits
+                        </p>
+
+                        <button onclick="recharge()">
+                            Recharge
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <div
+                    id="rechargeStatus"
+                    class="status"
+                ></div>
+
+            </section>
+
+
+            <!-- PROFILE -->
+
+            <section id="page-profile" class="hidden">
+
+                <h1 class="page-title">
+                    Profile
+                </h1>
+
+                <p class="page-description">
+                    Your account information and generation costs.
+                </p>
+
+                <div class="profile-box">
+
+                    <div class="profile-row">
+
+                        <span class="profile-label">
+                            Username
+                        </span>
+
+                        <strong id="profileUsername">
+                            -
+                        </strong>
+
+                    </div>
+
+
+                    <div class="profile-row">
+
+                        <span class="profile-label">
+                            Credits
+                        </span>
+
+                        <strong id="profileCredits">
+                            -
+                        </strong>
+
+                    </div>
+
+
+                    <div class="profile-row">
+
+                        <span class="profile-label">
+                            Image Generation
+                        </span>
+
+                        <strong>
+                            5 Credits
+                        </strong>
+
+                    </div>
+
+
+                    <div class="profile-row">
+
+                        <span class="profile-label">
+                            Audio Generation
+                        </span>
+
+                        <strong>
+                            8 Credits
+                        </strong>
+
+                    </div>
+
+
+                    <div class="profile-row">
+
+                        <span class="profile-label">
+                            Video Generation
+                        </span>
+
+                        <strong>
+                            21 Credits
+                        </strong>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+        </div>
+
+    </main>
+
+</section>
+
+
+<script>
+
+let videoPollingTimer = null;
+
+
+/* ================= HELPER ================= */
+
+function $(id){
+    return document.getElementById(id);
+}
+
+
+function escapeHtml(value){
+
+    return String(value).replace(
+        /[&<>"']/g,
+        function(c){
+
+            return {
+                "&":"&amp;",
+                "<":"&lt;",
+                ">":"&gt;",
+                '"':"&quot;",
+                "'":"&#039;"
+            }[c];
+
+        }
+    );
+
+}
+
+
+function message(target,text,type="error"){
+
+    $(target).innerHTML =
+        '<div class="' + type + '">' +
+        escapeHtml(text) +
+        '</div>';
+
+}
+
+
+/* ================= AUTH ================= */
+
+function showRegister(){
+
+    $("loginBox").classList.add("hidden");
+
+    $("registerBox").classList.remove("hidden");
+
+    $("authMessage").innerHTML = "";
+
+}
+
+
+function showLogin(){
+
+    $("registerBox").classList.add("hidden");
+
+    $("loginBox").classList.remove("hidden");
+
+    $("authMessage").innerHTML = "";
+
+}
+
+
+/* ================= REGISTER ================= */
+
+async function register(){
+
+    const username =
+        $("registerUsername").value.trim();
+
+    const password =
+        $("registerPassword").value;
+
+
+    if(!username || !password){
+
+        message(
+            "authMessage",
+            "Please enter username and password."
+        );
+
+        return;
+    }
+
+
+    try{
+
+        const response =
+            await fetch(
+                "/register",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":"application/json"
+                    },
+
+                    body:JSON.stringify({
+                        username:username,
+                        password:password
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(!response.ok){
+
+            message(
+                "authMessage",
+                data.error || "Registration failed."
+            );
+
+            return;
+        }
+
+
+        message(
+            "authMessage",
+            "Registration successful. Please login.",
+            "success"
+        );
+
+
+        $("registerUsername").value = "";
+
+        $("registerPassword").value = "";
+
+
+        showLogin();
+
+
+    }catch(error){
+
+        message(
+            "authMessage",
+            "Server connection error."
+        );
+
+    }
+
+}
+
+
+/* ================= LOGIN ================= */
+
+async function login(){
+
+    const username =
+        $("loginUsername").value.trim();
+
+    const password =
+        $("loginPassword").value;
+
+
+    if(!username || !password){
+
+        message(
+            "authMessage",
+            "Please enter username and password."
+        );
+
+        return;
+    }
+
+
+    try{
+
+        const response =
+            await fetch(
+                "/login",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":"application/json"
+                    },
+
+                    body:JSON.stringify({
+                        username:username,
+                        password:password
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(!response.ok){
+
+            message(
+                "authMessage",
+                data.error || "Login failed."
+            );
+
+            return;
+        }
+
+
+        $("auth").classList.add("hidden");
+
+        $("studio").classList.remove("hidden");
+
+
+        $("profileUsername").textContent =
+            data.username;
+
+
+        await loadCredits();
+
+
+        showPage("dashboard");
+
+
+    }catch(error){
+
+        message(
+            "authMessage",
+            "Server connection error."
+        );
+
+    }
+
+}
+
+
+/* ================= CHECK LOGIN ================= */
+
+async function checkLogin(){
+
+    try{
+
+        const response =
+            await fetch("/me");
+
+
+        const data =
+            await response.json();
+
+
+        if(data.logged_in){
+
+            $("auth").classList.add("hidden");
+
+            $("studio").classList.remove("hidden");
+
+
+            $("profileUsername").textContent =
+                data.username;
+
+
+            await loadCredits();
+
+
+            showPage("dashboard");
+
+        }
+
+    }catch(error){
+
+        console.log("Login check failed.");
+
+    }
+
+}
+
+
+/* ================= LOGOUT ================= */
+
+async function logout(){
+
+    try{
+
+        await fetch(
+            "/logout",
+            {
+                method:"POST"
+            }
+        );
+
+    }catch(error){
+
+        console.log(error);
+
+    }
+
+
+    location.reload();
+
+}
+
+
+/* ================= CREDITS ================= */
+
+async function loadCredits(){
+
+    try{
+
+        const response =
+            await fetch("/credits");
+
+
+        const data =
+            await response.json();
+
+
+        if(response.ok){
+
+            $("creditCount").textContent =
+                data.credits;
+
+
+            $("profileCredits").textContent =
+                data.credits;
+
+        }
+
+    }catch(error){
+
+        console.log("Credit loading failed.");
+
+    }
+
+}
+
+
+/* ================= PAGE NAVIGATION ================= */
+
+function showPage(page){
+
+    const pages = [
+        "dashboard",
+        "image",
+        "video",
+        "audio",
+        "recharge",
+        "profile"
+    ];
+
+
+    pages.forEach(function(name){
+
+        const pageElement =
+            $("page-" + name);
+
+
+        if(pageElement){
+
+            pageElement.classList.toggle(
+                "hidden",
+                name !== page
+            );
+
+        }
+
+
+        const navElement =
+            $("nav-" + name);
+
+
+        if(navElement){
+
+            navElement.classList.toggle(
+                "active",
+                name === page
+            );
+
+        }
+
+    });
+
+
+    loadCredits();
+
+}
+
+
+/* ================= IMAGE GENERATOR ================= */
+
+async function generateImage(){
+
+    const prompt =
+        $("imagePrompt").value.trim();
+
+
+    if(!prompt){
+
+        message(
+            "imageStatus",
+            "Please enter a prompt."
+        );
+
+        return;
+    }
+
+
+    const button =
+        $("imageButton");
+
+
+    button.disabled = true;
+
+    button.textContent =
+        "Generating...";
+
+
+    $("imageOutput").innerHTML = "";
+
+
+    message(
+        "imageStatus",
+        "Generating image. Please wait...",
+        "success"
+    );
+
+
+    try{
+
+        const response =
+            await fetch(
+                "/generate",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":"application/json"
+                    },
+
+                    body:JSON.stringify({
+                        prompt:prompt
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(!response.ok){
+
+            message(
+                "imageStatus",
+                data.error || "Generation failed."
+            );
+
+            return;
+        }
+
+
+        $("imageOutput").innerHTML =
+            '<img src="' +
+            data.image_url +
+            '?t=' +
+            Date.now() +
+            '" alt="Generated Image">';
+
+
+        message(
+            "imageStatus",
+            "Image generated successfully.",
+            "success"
+        );
+
+
+        await loadCredits();
+
+
+    }catch(error){
+
+        message(
+            "imageStatus",
+            "Server connection error."
+        );
+
+    }finally{
+
+        button.disabled = false;
+
+        button.textContent =
+            "Generate Image — 5 Credits";
+
+    }
+
+}
+
+
+/* ================= AUDIO GENERATOR ================= */
+
+async function generateAudio(){
+
+    const text =
+        $("audioText").value.trim();
+
+
+    if(!text){
+
+        message(
+            "audioStatus",
+            "Please enter text."
+        );
+
+        return;
+    }
+
+
+    const button =
+        $("audioButton");
+
+
+    button.disabled = true;
+
+    button.textContent =
+        "Generating...";
+
+
+    $("audioOutput").innerHTML = "";
+
+
+    message(
+        "audioStatus",
+        "Generating audio. Please wait...",
+        "success"
+    );
+
+
+    try{
+
+        const response =
+            await fetch(
+                "/audio",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":"application/json"
+                    },
+
+                    body:JSON.stringify({
+                        text:text
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(!response.ok){
+
+            message(
+                "audioStatus",
+                data.error || "Generation failed."
+            );
+
+            return;
+        }
+
+
+        $("audioOutput").innerHTML =
+            '<audio controls src="' +
+            data.audio_url +
+            '?t=' +
+            Date.now() +
+            '"></audio>';
+
+
+        message(
+            "audioStatus",
+            "Audio generated successfully.",
+            "success"
+        );
+
+
+        await loadCredits();
+
+
+    }catch(error){
+
+        message(
+            "audioStatus",
+            "Server connection error."
+        );
+
+    }finally{
+
+        button.disabled = false;
+
+        button.textContent =
+            "Generate Audio — 8 Credits";
+
+    }
+
+}
+async function generateVideo(){
+
+    const prompt =
+        $("videoPrompt").value.trim();
+
+
+    if(!prompt){
+
+        message(
+            "videoStatus",
+            "Please enter a prompt."
+        );
+
+        return;
+    }
+
+
+    const button =
+        $("videoButton");
+
+
+    button.disabled = true;
+
+    button.textContent =
+        "Starting...";
+
+
+    $("videoOutput").innerHTML = "";
+
+
+    message(
+        "videoStatus",
+        "Starting video generation...",
+        "success"
+    );
+
+
+    try{
+
+        const response =
+            await fetch(
+                "/video",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":"application/json"
+                    },
+
+                    body:JSON.stringify({
+                        prompt:prompt
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(!response.ok){
+
+            message(
+                "videoStatus",
+                data.error || "Video generation failed."
+            );
+
+            button.disabled = false;
+
+            button.textContent =
+                "Generate Video — 21 Credits";
+
+            return;
+        }
+
+
+        await loadCredits();
+
+
+        button.textContent =
+            "Generating...";
+
+
+        pollVideo(data.job_id);
+
+
+    }catch(error){
+
+        message(
+            "videoStatus",
+            "Server connection error."
+        );
+
+
+        button.disabled = false;
+
+        button.textContent =
+            "Generate Video — 21 Credits";
+
+    }
+
+}
+
+
+/* ================= VIDEO STATUS ================= */
+
+async function pollVideo(jobId){
+
+    try{
+
+        const response =
+            await fetch(
+                "/video/status/" +
+                encodeURIComponent(jobId)
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if(!response.ok){
+
+            message(
+                "videoStatus",
+                data.error ||
+                "Could not check video status."
+            );
+
+
+            finishVideoButton();
+
+            return;
+        }
+
+
+        if(data.status === "queued"){
+
+            message(
+                "videoStatus",
+                "Video request is queued. Waiting for AI GPU...",
+                "success"
+            );
+
+        }
+
+
+        else if(data.status === "generating"){
+
+            message(
+                "videoStatus",
+                "Video is generating. Please wait...",
+                "success"
+            );
+
+        }
+
+
+        else if(data.status === "completed"){
+
+            $("videoOutput").innerHTML =
+                '<video controls playsinline src="' +
+                data.video_url +
+                '?t=' +
+                Date.now() +
+                '"></video>';
+
+
+            message(
+                "videoStatus",
+                "Video generated successfully.",
+                "success"
+            );
+
+
+            await loadCredits();
+
+
+            finishVideoButton();
+
+            return;
+
+        }
+
+
+        else if(data.status === "failed"){
+
+            message(
+                "videoStatus",
+                "Video generation failed: " +
+                (data.message || "Unknown error")
+            );
+
+
+            await loadCredits();
+
+
+            finishVideoButton();
+
+            return;
+
+        }
+
+
+        videoPollingTimer =
+            setTimeout(
+                function(){
+                    pollVideo(jobId);
+                },
+                3000
+            );
+
+
+    }catch(error){
+
+        message(
+            "videoStatus",
+            "Connection interrupted. Checking again..."
+        );
+
+
+        videoPollingTimer =
+            setTimeout(
+                function(){
+                    pollVideo(jobId);
+                },
+                5000
+            );
+
+    }
+
+}
+
+
+/* ================= VIDEO BUTTON ================= */
+
+function finishVideoButton(){
+
+    const button =
+        $("videoButton");
+
+
+    button.disabled = false;
+
+    button.textContent =
+        "Generate Video — 21 Credits";
+
+}
+
+
+/* ================= RECHARGE ================= */
+
+async function recharge(){
+
+    try{
+
+        const response =
+            await fetch(
+                "/recharge",
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":"application/json"
+                    },
+
+                    body:JSON.stringify({})
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        message(
+            "rechargeStatus",
+            data.error ||
+            "Recharge unavailable."
+        );
+
+
+    }catch(error){
+
+        message(
+            "rechargeStatus",
+            "Server connection error."
+        );
+
+    }
+
+}
+
+
+/* ================= START ================= */
+
+checkLogin();
+
+</script>
+
+</body>
+</html>
