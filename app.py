@@ -3,2123 +3,790 @@ import time
 import base64
 import sqlite3
 import threading
-import wave
 import requests
 
-from flask import (
-    Flask,
-    request,
-    jsonify,
-    send_file,
-    send_from_directory,
-    session
-)
-
-from werkzeug.security import (
-    generate_password_hash,
-    check_password_hash
-)
-
+from flask import Flask, request, jsonify, send_file
+from flask import session
+from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-
-
-# =========================================================
-# APP
-# =========================================================
 
 app = Flask(__name__)
 
 app.secret_key = os.getenv(
-    "SECRET_KEY",
+    "FLASK_SECRET_KEY",
     "my-ai-studio-secret-key-2026"
 )
 
-BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+# =========================
+# SETTINGS
+# =========================
 
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY",
-    ""
-).strip()
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    ""
-).strip()
-
-DATABASE = "users.db"
-
-
-# =========================================================
-# GEMINI MODELS
-# =========================================================
-
-IMAGE_MODEL = "gemini-3.1-flash-image"
-
-AUDIO_MODEL = "gemini-3.1-flash-tts-preview"
-
-VIDEO_MODEL = "veo-3.1-generate-preview"
-
-
-# =========================================================
-# CREDITS
-# =========================================================
-
-STARTING_CREDITS = 100
-
+NEW_USER_CREDITS = 100
 IMAGE_COST = 5
 AUDIO_COST = 8
 VIDEO_COST = 21
-GENERATE_ALL_COST = 34
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY")
 
-# =========================================================
-# VIDEO JOBS
-# =========================================================
+POLLINATIONS_BASE = "https://gen.pollinations.ai"
 
-video_jobs = {}
-
-
-# =========================================================
+# =========================
 # DATABASE
-# =========================================================
+# =========================
 
 def is_postgres():
     return bool(DATABASE_URL)
 
 
-def get_db():
+def db():
+    if is_postgres():
+        import psycopg2
+        return psycopg2.connect(DATABASE_URL)
+
+    return sqlite3.connect("users.db")
+
+
+def db_placeholder():
+    if is_postgres():
+        return "%s"
+
+    return "?"
+
+
+def init_database():
+    con = db()
+    cur = con.cursor()
 
     if is_postgres():
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                credits INTEGER NOT NULL DEFAULT 100
+            )
+        """)
+    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                credits INTEGER NOT NULL DEFAULT 100
+            )
+        """)
 
-        import psycopg2
+    con.commit()
+    cur.close()
+    con.close()
 
-        return psycopg2.connect(
-            DATABASE_URL
-        )
 
-    conn = sqlite3.connect(
-        DATABASE,
-        check_same_thread=False
+init_database()
+
+
+# =========================
+# CREDIT FUNCTIONS
+# =========================
+
+def get_credits(user_id):
+    con = db()
+    cur = con.cursor()
+    p = db_placeholder()
+
+    cur.execute(
+        f"SELECT credits FROM users WHERE id={p}",
+        (user_id,)
     )
 
-    conn.row_factory = sqlite3.Row
+    row = cur.fetchone()
 
-    return conn
+    cur.close()
+    con.close()
 
-
-def db_query(
-    query,
-    params=(),
-    fetchone=False,
-    fetchall=False
-):
-
-    conn = get_db()
-
-    try:
-
-        if is_postgres():
-            query = query.replace(
-                "?",
-                "%s"
-            )
-
-        cur = conn.cursor()
-
-        cur.execute(
-            query,
-            params
-        )
-
-        result = None
-
-        if fetchone:
-
-            row = cur.fetchone()
-
-            if row:
-
-                if is_postgres():
-
-                    columns = [
-                        description[0]
-                        for description in cur.description
-                    ]
-
-                    result = dict(
-                        zip(
-                            columns,
-                            row
-                        )
-                    )
-
-                else:
-
-                    result = dict(row)
-
-        elif fetchall:
-
-            rows = cur.fetchall()
-
-            if is_postgres():
-
-                columns = [
-                    description[0]
-                    for description in cur.description
-                ]
-
-                result = [
-                    dict(
-                        zip(
-                            columns,
-                            row
-                        )
-                    )
-                    for row in rows
-                ]
-
-            else:
-
-                result = [
-                    dict(row)
-                    for row in rows
-                ]
-
-        conn.commit()
-
-        return result
-
-    except Exception:
-
-        conn.rollback()
-
-        raise
-
-    finally:
-
-        conn.close()
+    return row[0] if row else 0
 
 
-def init_db():
+def add_credits(user_id, amount):
+    con = db()
+    cur = con.cursor()
+    p = db_placeholder()
 
-    conn = get_db()
+    cur.execute(
+        f"UPDATE users SET credits=credits+{p} WHERE id={p}",
+        (amount, user_id)
+    )
 
-    try:
-
-        cur = conn.cursor()
-
-        if is_postgres():
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
-                    credits INTEGER NOT NULL DEFAULT 100
-                )
-            """)
-
-            cur.execute("""
-                ALTER TABLE users
-                ADD COLUMN IF NOT EXISTS credits
-                INTEGER NOT NULL DEFAULT 100
-            """)
-
-        else:
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
-                    credits INTEGER NOT NULL DEFAULT 100
-                )
-            """)
-
-            cur.execute(
-                "PRAGMA table_info(users)"
-            )
-
-            columns = [
-                row[1]
-                for row in cur.fetchall()
-            ]
-
-            if "credits" not in columns:
-
-                cur.execute("""
-                    ALTER TABLE users
-                    ADD COLUMN credits
-                    INTEGER NOT NULL DEFAULT 100
-                """)
-
-        conn.commit()
-
-    finally:
-
-        conn.close()
+    con.commit()
+    cur.close()
+    con.close()
 
 
-init_db()
+def use_credits(user_id, amount):
+    con = db()
+    cur = con.cursor()
+    p = db_placeholder()
+
+    cur.execute(
+        f"""
+        UPDATE users
+        SET credits=credits-{p}
+        WHERE id={p} AND credits>={p}
+        """,
+        (amount, user_id, amount)
+    )
+
+    success = cur.rowcount == 1
+
+    con.commit()
+    cur.close()
+    con.close()
+
+    return success
 
 
-# =========================================================
+# =========================
 # AUTH
-# =========================================================
+# =========================
 
-def login_required(func):
-
-    @wraps(func)
+def login_required(fn):
+    @wraps(fn)
     def wrapper(*args, **kwargs):
-
         if "user_id" not in session:
-
             return jsonify({
-                "error": "Please login first."
+                "error": "Please login first"
             }), 401
 
-        return func(
-            *args,
-            **kwargs
-        )
+        return fn(*args, **kwargs)
 
     return wrapper
 
 
-def current_user():
-
-    user_id = session.get(
-        "user_id"
-    )
-
-    if not user_id:
-        return None
-
-    return db_query(
-        """
-        SELECT id, username, credits
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,),
-        fetchone=True
-    )
-
-
-# =========================================================
-# CREDIT FUNCTIONS
-# =========================================================
-
-def get_user_credits(user_id):
-
-    user = db_query(
-        """
-        SELECT credits
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,),
-        fetchone=True
-    )
-
-    if not user:
-        return 0
-
-    return int(
-        user["credits"]
-    )
-
-
-def change_credits(
-    user_id,
-    amount
-):
-
-    conn = get_db()
-
-    try:
-
-        cur = conn.cursor()
-
-        if is_postgres():
-
-            cur.execute(
-                """
-                UPDATE users
-                SET credits = credits + %s
-                WHERE id = %s
-                """,
-                (
-                    amount,
-                    user_id
-                )
-            )
-
-        else:
-
-            cur.execute(
-                """
-                UPDATE users
-                SET credits = credits + ?
-                WHERE id = ?
-                """,
-                (
-                    amount,
-                    user_id
-                )
-            )
-
-        conn.commit()
-
-    except Exception:
-
-        conn.rollback()
-
-        raise
-
-    finally:
-
-        conn.close()
-
-
-def use_credits(
-    user_id,
-    amount
-):
-
-    conn = get_db()
-
-    try:
-
-        cur = conn.cursor()
-
-        if is_postgres():
-
-            cur.execute(
-                """
-                SELECT credits
-                FROM users
-                WHERE id = %s
-                FOR UPDATE
-                """,
-                (user_id,)
-            )
-
-        else:
-
-            cur.execute(
-                """
-                SELECT credits
-                FROM users
-                WHERE id = ?
-                """,
-                (user_id,)
-            )
-
-        row = cur.fetchone()
-
-        if not row:
-
-            conn.rollback()
-
-            return False, 0
-
-        current = int(
-            row[0]
-        )
-
-        if current < amount:
-
-            conn.rollback()
-
-            return False, current
-
-        new_balance = (
-            current - amount
-        )
-
-        if is_postgres():
-
-            cur.execute(
-                """
-                UPDATE users
-                SET credits = %s
-                WHERE id = %s
-                """,
-                (
-                    new_balance,
-                    user_id
-                )
-            )
-
-        else:
-
-            cur.execute(
-                """
-                UPDATE users
-                SET credits = ?
-                WHERE id = ?
-                """,
-                (
-                    new_balance,
-                    user_id
-                )
-            )
-
-        conn.commit()
-
-        return True, new_balance
-
-    except Exception:
-
-        conn.rollback()
-
-        raise
-
-    finally:
-
-        conn.close()
-
-
-# =========================================================
-# GEMINI
-# =========================================================
-
-def gemini_headers():
-
-    return {
-        "x-goog-api-key": GEMINI_API_KEY,
-        "Content-Type": "application/json"
-    }
-
-
-def gemini_ready():
-
-    return bool(
-        GEMINI_API_KEY
-    )
-
-
-# =========================================================
-# HOMEPAGE
-# =========================================================
+# =========================
+# HOME
+# =========================
 
 @app.route("/")
 def home():
-
-    return send_from_directory(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        ),
-        "index.html"
+    return send_file(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "index.html"
+        )
     )
 
 
-# =========================================================
-# HEALTH
-# =========================================================
-
-@app.route("/health")
-def health():
-
-    return jsonify({
-
-        "status": "ok",
-
-        "database": (
-            "postgresql"
-            if is_postgres()
-            else "sqlite"
-        ),
-
-        "gemini_configured": (
-            gemini_ready()
-        ),
-
-        "image_model": IMAGE_MODEL,
-
-        "audio_model": AUDIO_MODEL,
-
-        "video_model": VIDEO_MODEL
-    })
-
-
-# =========================================================
+# =========================
 # REGISTER
-# =========================================================
+# =========================
 
-@app.route(
-    "/register",
-    methods=["POST"]
-)
+@app.route("/register", methods=["POST"])
 def register():
-
     try:
+        data = request.get_json() or {}
 
-        data = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        username = str(
-            data.get(
-                "username",
-                ""
-            )
-        ).strip()
-
-        password = str(
-            data.get(
-                "password",
-                ""
-            )
-        )
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
 
         if not username or not password:
-
             return jsonify({
-                "error":
-                    "Username and password are required."
+                "error": "Username and password are required"
             }), 400
 
-        if len(username) < 3:
-
+        if len(password) < 6:
             return jsonify({
-                "error":
-                    "Username must be at least 3 characters."
+                "error": "Password must be at least 6 characters"
             }), 400
 
-        if len(password) < 4:
+        con = db()
+        cur = con.cursor()
+        p = db_placeholder()
 
-            return jsonify({
-                "error":
-                    "Password must be at least 4 characters."
-            }), 400
-
-        existing = db_query(
-            """
-            SELECT id
-            FROM users
-            WHERE username = ?
-            """,
-            (username,),
-            fetchone=True
-        )
-
-        if existing:
-
-            return jsonify({
-                "error":
-                    "Username already exists."
-            }), 409
-
-        password_hash = (
-            generate_password_hash(
-                password
-            )
-        )
-
-        db_query(
-            """
-            INSERT INTO users
-            (username, password, credits)
-            VALUES (?, ?, ?)
+        cur.execute(
+            f"""
+            INSERT INTO users(username,password,credits)
+            VALUES({p},{p},{p})
             """,
             (
                 username,
-                password_hash,
-                STARTING_CREDITS
+                generate_password_hash(password),
+                NEW_USER_CREDITS
             )
         )
 
+        con.commit()
+
+        cur.close()
+        con.close()
+
         return jsonify({
-
-            "success": True,
-
-            "message":
-                "Registration successful.",
-
-            "credits":
-                STARTING_CREDITS
+            "message": "Account created successfully",
+            "credits": NEW_USER_CREDITS
         })
 
     except Exception as e:
-
-        print(
-            "REGISTER ERROR:",
-            str(e)
-        )
+        print("REGISTER ERROR:", str(e))
 
         return jsonify({
-            "error":
-                "Registration failed."
-        }), 500
+            "error": "Username already exists or registration failed"
+        }), 400
 
 
-# =========================================================
+# =========================
 # LOGIN
-# =========================================================
+# =========================
 
-@app.route(
-    "/login",
-    methods=["POST"]
-)
+@app.route("/login", methods=["POST"])
 def login():
-
     try:
+        data = request.get_json() or {}
 
-        data = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
+        username = data.get("username", "").strip()
+        password = data.get("password", "")
 
-        username = str(
-            data.get(
-                "username",
-                ""
-            )
-        ).strip()
+        if not username or not password:
+            return jsonify({
+                "error": "Username and password are required"
+            }), 400
 
-        password = str(
-            data.get(
-                "password",
-                ""
-            )
-        )
+        con = db()
+        cur = con.cursor()
+        p = db_placeholder()
 
-        user = db_query(
-            """
+        cur.execute(
+            f"""
             SELECT id, username, password, credits
             FROM users
-            WHERE username = ?
+            WHERE username={p}
             """,
-            (username,),
-            fetchone=True
+            (username,)
         )
+
+        user = cur.fetchone()
+
+        cur.close()
+        con.close()
 
         if not user:
-
             return jsonify({
-                "error":
-                    "Invalid username or password."
+                "error": "Username or password is incorrect"
             }), 401
 
-        if not check_password_hash(
-            user["password"],
-            password
-        ):
-
+        if not check_password_hash(user[2], password):
             return jsonify({
-                "error":
-                    "Invalid username or password."
+                "error": "Username or password is incorrect"
             }), 401
 
-        session["user_id"] = user["id"]
-
-        session["username"] = (
-            user["username"]
-        )
+        session["user_id"] = user[0]
+        session["username"] = user[1]
 
         return jsonify({
-
-            "success": True,
-
-            "username":
-                user["username"],
-
-            "credits":
-                int(
-                    user["credits"]
-                )
+            "message": "Login successful",
+            "username": user[1],
+            "credits": user[3]
         })
 
     except Exception as e:
-
-        print(
-            "LOGIN ERROR:",
-            str(e)
-        )
+        print("LOGIN ERROR:", str(e))
 
         return jsonify({
-            "error":
-                "Login failed."
+            "error": "Login failed"
         }), 500
 
 
-# =========================================================
+# =========================
 # ME
-# =========================================================
+# =========================
 
 @app.route("/me")
 def me():
-
-    user = current_user()
-
-    if not user:
-
+    if "user_id" in session:
         return jsonify({
-            "logged_in": False
+            "logged_in": True,
+            "username": session["username"],
+            "credits": get_credits(session["user_id"])
         })
 
     return jsonify({
-
-        "logged_in": True,
-
-        "user": {
-
-            "id":
-                user["id"],
-
-            "username":
-                user["username"],
-
-            "credits":
-                int(
-                    user["credits"]
-                )
-        }
+        "logged_in": False
     })
 
 
-# =========================================================
-# LOGOUT
-# =========================================================
-
-@app.route("/logout")
-def logout():
-
-    session.clear()
-
-    return jsonify({
-        "success": True
-    })
-
-
-# =========================================================
+# =========================
 # CREDITS
-# =========================================================
+# =========================
 
 @app.route("/credits")
 @login_required
 def credits():
+    return jsonify({
+        "credits": get_credits(session["user_id"])
+    })
 
-    balance = get_user_credits(
-        session["user_id"]
-    )
+
+# =========================
+# LOGOUT
+# =========================
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
 
     return jsonify({
-
-        "credits":
-            balance,
-
-        "costs": {
-
-            "image":
-                IMAGE_COST,
-
-            "audio":
-                AUDIO_COST,
-
-            "video":
-                VIDEO_COST,
-
-            "generate_all":
-                GENERATE_ALL_COST
-        }
+        "message": "Logged out successfully"
     })
-    # =========================================================
-# IMAGE GENERATION
-# =========================================================
+# =========================
+# POLLINATIONS HELPERS
+# =========================
 
-@app.route(
-    "/generate",
-    methods=["POST"]
-)
+def pollinations_headers():
+    if not POLLINATIONS_API_KEY:
+        raise RuntimeError(
+            "POLLINATIONS_API_KEY is not configured on the server."
+        )
+
+    return {
+        "Authorization": f"Bearer {POLLINATIONS_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+
+def pollinations_error(response):
+    try:
+        data = response.json()
+
+        if isinstance(data, dict):
+            if data.get("error"):
+                return str(data["error"])
+
+            if data.get("message"):
+                return str(data["message"])
+
+        return response.text[:500]
+
+    except Exception:
+        return response.text[:500]
+
+
+# =========================
+# IMAGE GENERATION
+# =========================
+
+@app.route("/generate", methods=["POST"])
 @login_required
 def generate():
-
-    user_id = session["user_id"]
-
-    if not gemini_ready():
-
-        return jsonify({
-            "error":
-                "GEMINI_API_KEY is not configured."
-        }), 500
-
     try:
+        data = request.get_json() or {}
 
-        data = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        prompt = str(
-            data.get(
-                "prompt",
-                ""
-            )
-        ).strip()
+        prompt = data.get("prompt", "").strip()
 
         if not prompt:
-
             return jsonify({
-                "error":
-                    "Please enter a prompt."
+                "error": "Please enter a prompt"
             }), 400
 
-        success, balance = use_credits(
-            user_id,
-            IMAGE_COST
-        )
+        user_id = session["user_id"]
 
-        if not success:
+        current_credits = get_credits(user_id)
 
+        if current_credits < IMAGE_COST:
             return jsonify({
-                "error":
-                    "Your credits are finished. Please recharge to continue.",
-                "credits":
-                    balance
+                "error": "Your credits are finished. Please recharge to continue."
             }), 402
 
-        # -------------------------------------------------
-        # IMPORTANT
-        #
-        # We intentionally keep the request simple.
-        # No mime_type is sent here.
-        #
-        # Google official REST example supports:
-        # model + input
-        #
-        # output_image.data contains the image.
-        # -------------------------------------------------
+        headers = pollinations_headers()
 
         payload = {
-
-            "model":
-                IMAGE_MODEL,
-
-            "input":
-                prompt
+            "prompt": prompt,
+            "model": "black-forest-labs/flux.1-schnell",
+            "size": "1024x1024",
+            "n": 1,
+            "response_format": "url"
         }
 
+        print("IMAGE: Sending request to Pollinations...")
+
         response = requests.post(
-
-            f"{BASE_URL}/interactions",
-
-            headers=
-                gemini_headers(),
-
-            json=
-                payload,
-
-            timeout=180
-        )
-
-        print(
-            "IMAGE STATUS:",
-            response.status_code
-        )
-
-        print(
-            "IMAGE RESPONSE:",
-            response.text[:3000]
+            f"{POLLINATIONS_BASE}/v1/images/generations",
+            headers=headers,
+            json=payload,
+            timeout=300
         )
 
         if response.status_code != 200:
+            error_message = pollinations_error(response)
 
-            change_credits(
-                user_id,
-                IMAGE_COST
+            print(
+                "IMAGE POLLINATIONS ERROR:",
+                response.status_code,
+                error_message
             )
 
-            try:
-
-                error_data = (
-                    response.json()
-                )
-
-            except Exception:
-
-                error_data = (
-                    response.text
-                )
-
             return jsonify({
-
-                "error":
-                    "Image generation failed.",
-
-                "details":
-                    error_data
+                "error": f"Image generation failed: {error_message}"
             }), response.status_code
 
         result = response.json()
 
-        image_data = None
+        image_url = None
 
-        # -------------------------------------------------
-        # Preferred current output
-        # -------------------------------------------------
+        if isinstance(result, dict):
+            data_list = result.get("data", [])
 
-        output_image = (
-            result.get(
-                "output_image"
-            )
-        )
+            if data_list and isinstance(data_list[0], dict):
+                image_url = data_list[0].get("url")
 
-        if isinstance(
-            output_image,
-            dict
-        ):
+                # Backup if API returns base64
+                b64_data = data_list[0].get("b64_json")
 
-            image_data = (
-                output_image.get(
-                    "data"
-                )
-            )
+                if not image_url and b64_data:
+                    image_bytes = base64.b64decode(b64_data)
 
-        # -------------------------------------------------
-        # Fallback: search steps
-        # -------------------------------------------------
+                    with open("generated.png", "wb") as f:
+                        f.write(image_bytes)
 
-        if not image_data:
+                    image_url = "/generated.png"
 
-            steps = result.get(
-                "steps",
-                []
-            )
-
-            if isinstance(
-                steps,
-                list
-            ):
-
-                for step in steps:
-
-                    if not isinstance(
-                        step,
-                        dict
-                    ):
-                        continue
-
-                    content = step.get(
-                        "content",
-                        []
-                    )
-
-                    if not isinstance(
-                        content,
-                        list
-                    ):
-                        continue
-
-                    for block in content:
-
-                        if not isinstance(
-                            block,
-                            dict
-                        ):
-                            continue
-
-                        if (
-                            block.get(
-                                "type"
-                            )
-                            == "image"
-                        ):
-
-                            image_data = (
-                                block.get(
-                                    "data"
-                                )
-                            )
-
-                            if image_data:
-                                break
-
-                    if image_data:
-                        break
-
-        if not image_data:
-
-            change_credits(
-                user_id,
-                IMAGE_COST
-            )
-
+        if not image_url:
             return jsonify({
-
-                "error":
-                    "Google returned no image data.",
-
-                "response":
-                    result
+                "error": "Image was generated but no image URL was returned."
             }), 500
 
-        try:
-
-            image_bytes = (
-                base64.b64decode(
-                    image_data
-                )
-            )
-
-        except Exception as e:
-
-            change_credits(
-                user_id,
-                IMAGE_COST
-            )
-
+        # Deduct credits only after successful generation
+        if not use_credits(user_id, IMAGE_COST):
             return jsonify({
-
-                "error":
-                    "Could not decode image.",
-
-                "details":
-                    str(e)
+                "error": "Unable to deduct credits."
             }), 500
 
-        with open(
-            "generated.png",
-            "wb"
-        ) as f:
-
-            f.write(
-                image_bytes
-            )
+        print("IMAGE: Success")
 
         return jsonify({
-
-            "success": True,
-
-            "image_url":
-                "/generated.png",
-
-            "credits":
-                get_user_credits(
-                    user_id
-                )
+            "image_url": image_url,
+            "credits_used": IMAGE_COST,
+            "credits_remaining": get_credits(user_id)
         })
 
-    except requests.exceptions.Timeout:
-
-        change_credits(
-            user_id,
-            IMAGE_COST
-        )
+    except requests.Timeout:
+        print("IMAGE ERROR: Request timed out")
 
         return jsonify({
-            "error":
-                "Image generation timed out."
+            "error": "Image generation timed out. Please try again."
         }), 504
 
     except Exception as e:
-
-        print(
-            "IMAGE ERROR:",
-            str(e)
-        )
-
-        change_credits(
-            user_id,
-            IMAGE_COST
-        )
+        print("IMAGE ERROR:", str(e))
 
         return jsonify({
-
-            "error":
-                "Image generation failed.",
-
-            "details":
-                str(e)
+            "error": str(e)
         }), 500
 
 
-# =========================================================
-# GENERATED IMAGE
-# =========================================================
+# =========================
+# LOCAL GENERATED IMAGE
+# =========================
 
 @app.route("/generated.png")
 def generated_image():
-
-    if not os.path.exists(
+    file_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
         "generated.png"
-    ):
+    )
 
+    if not os.path.exists(file_path):
         return jsonify({
-            "error":
-                "No generated image found."
+            "error": "Generated image not found"
         }), 404
 
     return send_file(
-        "generated.png",
+        file_path,
         mimetype="image/png"
     )
 
 
-# =========================================================
-# AUDIO
-# =========================================================
+# =========================
+# AUDIO GENERATION
+# =========================
 
-@app.route(
-    "/audio",
-    methods=["POST"]
-)
+@app.route("/audio", methods=["POST"])
 @login_required
 def audio():
-
-    user_id = session["user_id"]
-
-    if not gemini_ready():
-
-        return jsonify({
-            "error":
-                "GEMINI_API_KEY is not configured."
-        }), 500
-
     try:
+        data = request.get_json() or {}
 
-        data = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        text = str(
-            data.get(
-                "text",
-                ""
-            )
-        ).strip()
+        text = data.get("text", "").strip()
 
         if not text:
-
-            text = str(
-                data.get(
-                    "prompt",
-                    ""
-                )
-            ).strip()
-
-        if not text:
-
             return jsonify({
-                "error":
-                    "Please enter text."
+                "error": "Please enter text"
             }), 400
 
-        success, balance = use_credits(
-            user_id,
-            AUDIO_COST
-        )
+        user_id = session["user_id"]
 
-        if not success:
+        current_credits = get_credits(user_id)
 
+        if current_credits < AUDIO_COST:
             return jsonify({
-
-                "error":
-                    "Your credits are finished. Please recharge to continue.",
-
-                "credits":
-                    balance
+                "error": "Your credits are finished. Please recharge to continue."
             }), 402
 
+        headers = pollinations_headers()
+
         payload = {
-
-            "model":
-                AUDIO_MODEL,
-
-            "input":
-                text,
-
-            "response_format": {
-
-                "type":
-                    "audio"
-            },
-
-            "generation_config": {
-
-                "speech_config": [
-
-                    {
-                        "voice":
-                            "Kore"
-                    }
-                ]
-            }
+            "model": "elevenlabs/eleven-v3",
+            "input": text,
+            "voice": "nova",
+            "response_format": "wav"
         }
 
+        print("AUDIO: Sending request to Pollinations...")
+
         response = requests.post(
-
-            f"{BASE_URL}/interactions",
-
-            headers=
-                gemini_headers(),
-
-            json=
-                payload,
-
-            timeout=180
-        )
-
-        print(
-            "AUDIO STATUS:",
-            response.status_code
-        )
-
-        print(
-            "AUDIO RESPONSE:",
-            response.text[:2000]
+            f"{POLLINATIONS_BASE}/v1/audio/speech",
+            headers=headers,
+            json=payload,
+            timeout=300
         )
 
         if response.status_code != 200:
+            error_message = pollinations_error(response)
 
-            change_credits(
-                user_id,
-                AUDIO_COST
+            print(
+                "AUDIO POLLINATIONS ERROR:",
+                response.status_code,
+                error_message
             )
 
-            try:
-
-                error_data = (
-                    response.json()
-                )
-
-            except Exception:
-
-                error_data = (
-                    response.text
-                )
-
             return jsonify({
-
-                "error":
-                    "Audio generation failed.",
-
-                "details":
-                    error_data
+                "error": f"Audio generation failed: {error_message}"
             }), response.status_code
 
-        result = response.json()
-
-        audio_data = None
-
-        output_audio = (
-            result.get(
-                "output_audio"
-            )
-        )
-
-        if isinstance(
-            output_audio,
-            dict
-        ):
-
-            audio_data = (
-                output_audio.get(
-                    "data"
-                )
-            )
-
-        if not audio_data:
-
-            change_credits(
-                user_id,
-                AUDIO_COST
-            )
-
-            return jsonify({
-
-                "error":
-                    "Google returned no audio data.",
-
-                "response":
-                    result
-            }), 500
-
-        pcm_bytes = (
-            base64.b64decode(
-                audio_data
-            )
-        )
-
-        save_pcm_as_wav(
-            pcm_bytes,
+        audio_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
             "generated.wav"
         )
 
+        with open(audio_path, "wb") as f:
+            f.write(response.content)
+
+        # Make sure something was actually returned
+        if os.path.getsize(audio_path) == 0:
+            return jsonify({
+                "error": "Audio generation returned an empty file."
+            }), 500
+
+        # Deduct only after successful generation
+        if not use_credits(user_id, AUDIO_COST):
+            return jsonify({
+                "error": "Unable to deduct credits."
+            }), 500
+
+        print("AUDIO: Success")
+
         return jsonify({
-
-            "success":
-                True,
-
-            "audio_url":
-                "/generated.wav",
-
-            "credits":
-                get_user_credits(
-                    user_id
-                )
+            "audio_url": "/generated.wav",
+            "credits_used": AUDIO_COST,
+            "credits_remaining": get_credits(user_id)
         })
 
-    except requests.exceptions.Timeout:
-
-        change_credits(
-            user_id,
-            AUDIO_COST
-        )
+    except requests.Timeout:
+        print("AUDIO ERROR: Request timed out")
 
         return jsonify({
-            "error":
-                "Audio generation timed out."
+            "error": "Audio generation timed out. Please try again."
         }), 504
 
     except Exception as e:
-
-        print(
-            "AUDIO ERROR:",
-            str(e)
-        )
-
-        change_credits(
-            user_id,
-            AUDIO_COST
-        )
+        print("AUDIO ERROR:", str(e))
 
         return jsonify({
-
-            "error":
-                "Audio generation failed.",
-
-            "details":
-                str(e)
+            "error": str(e)
         }), 500
 
 
-# =========================================================
-# PCM -> WAV
-# =========================================================
-
-def save_pcm_as_wav(
-    pcm_data,
-    filename
-):
-
-    with wave.open(
-        filename,
-        "wb"
-    ) as wf:
-
-        wf.setnchannels(
-            1
-        )
-
-        wf.setsampwidth(
-            2
-        )
-
-        wf.setframerate(
-            24000
-        )
-
-        wf.writeframes(
-            pcm_data
-        )
-
-
-# =========================================================
-# GENERATED AUDIO
-# =========================================================
+# =========================
+# LOCAL GENERATED AUDIO
+# =========================
 
 @app.route("/generated.wav")
 def generated_audio():
-
-    if not os.path.exists(
+    file_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
         "generated.wav"
-    ):
+    )
 
+    if not os.path.exists(file_path):
         return jsonify({
-            "error":
-                "No generated audio found."
+            "error": "Generated audio not found"
         }), 404
 
     return send_file(
-        "generated.wav",
+        file_path,
         mimetype="audio/wav"
     )
+# =========================
+# VIDEO GENERATION
+# =========================
 
-
-# =========================================================
-# VIDEO START
-# =========================================================
-
-@app.route(
-    "/video",
-    methods=["POST"]
-)
+@app.route("/video", methods=["POST"])
 @login_required
 def video():
-
-    user_id = session["user_id"]
-
-    if not gemini_ready():
-
-        return jsonify({
-            "error":
-                "GEMINI_API_KEY is not configured."
-        }), 500
-
     try:
+        data = request.get_json() or {}
 
-        data = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        prompt = str(
-            data.get(
-                "prompt",
-                ""
-            )
-        ).strip()
+        prompt = data.get("prompt", "").strip()
 
         if not prompt:
-
             return jsonify({
-                "error":
-                    "Please enter a prompt."
+                "error": "Please enter a prompt"
             }), 400
 
-        success, balance = use_credits(
-            user_id,
-            VIDEO_COST
-        )
+        user_id = session["user_id"]
 
-        if not success:
+        current_credits = get_credits(user_id)
 
+        if current_credits < VIDEO_COST:
             return jsonify({
-
-                "error":
-                    "Your credits are finished. Please recharge to continue.",
-
-                "credits":
-                    balance
+                "error": "Your credits are finished. Please recharge to continue."
             }), 402
 
-        job_id = (
-            str(
-                int(
-                    time.time() * 1000
-                )
-            )
-            + "_"
-            + str(user_id)
-        )
+        if not POLLINATIONS_API_KEY:
+            return jsonify({
+                "error": "POLLINATIONS_API_KEY is not configured."
+            }), 500
 
-        video_jobs[job_id] = {
+        # Pollinations video endpoint
+        video_url = f"{POLLINATIONS_BASE}/video/{requests.utils.quote(prompt, safe='')}"
 
-            "status":
-                "starting",
-
-            "progress":
-                5,
-
-            "video_url":
-                None,
-
-            "error":
-                None
+        params = {
+            "model": "google/veo-3.1-fast",
+            "duration": 4,
+            "aspectRatio": "16:9",
+            "audio": False
         }
 
-        thread = threading.Thread(
-
-            target=
-                generate_video_job,
-
-            args=(
-                job_id,
-                user_id,
-                prompt
-            ),
-
-            daemon=True
-        )
-
-        thread.start()
-
-        return jsonify({
-
-            "success":
-                True,
-
-            "job_id":
-                job_id,
-
-            "credits":
-                get_user_credits(
-                    user_id
-                )
-        })
-
-    except Exception as e:
-
-        print(
-            "VIDEO ERROR:",
-            str(e)
-        )
-
-        return jsonify({
-
-            "error":
-                "Video generation failed.",
-
-            "details":
-                str(e)
-        }), 500
-        # =========================================================
-# VIDEO BACKGROUND JOB
-# =========================================================
-
-def generate_video_job(
-    job_id,
-    user_id,
-    prompt
-):
-
-    try:
-
-        video_jobs[job_id] = {
-
-            "status":
-                "generating",
-
-            "progress":
-                10,
-
-            "video_url":
-                None,
-
-            "error":
-                None
+        headers = {
+            "Authorization": f"Bearer {POLLINATIONS_API_KEY}"
         }
 
-        payload = {
+        print("VIDEO: Sending request to Pollinations...")
+        print("VIDEO PROMPT:", prompt)
 
-            "instances": [
-
-                {
-                    "prompt":
-                        prompt
-                }
-            ]
-        }
-
-        response = requests.post(
-
-            f"{BASE_URL}/models/"
-            f"{VIDEO_MODEL}:predictLongRunning",
-
-            headers=
-                gemini_headers(),
-
-            json=
-                payload,
-
-            timeout=120
-        )
-
-        print(
-            "VIDEO START:",
-            response.status_code
-        )
-
-        print(
-            "VIDEO RESPONSE:",
-            response.text[:3000]
+        response = requests.get(
+            video_url,
+            headers=headers,
+            params=params,
+            timeout=600
         )
 
         if response.status_code != 200:
+            error_message = pollinations_error(response)
 
-            change_credits(
-                user_id,
-                VIDEO_COST
+            print(
+                "VIDEO POLLINATIONS ERROR:",
+                response.status_code,
+                error_message
             )
 
-            video_jobs[job_id] = {
+            return jsonify({
+                "error": f"Video generation failed: {error_message}"
+            }), response.status_code
 
-                "status":
-                    "failed",
-
-                "progress":
-                    0,
-
-                "video_url":
-                    None,
-
-                "error":
-                    response.text
-            }
-
-            return
-
-        operation = (
-            response.json()
+        video_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "generated.mp4"
         )
 
-        operation_name = (
-            operation.get(
-                "name"
-            )
-        )
-
-        if not operation_name:
-
-            change_credits(
-                user_id,
-                VIDEO_COST
-            )
-
-            video_jobs[job_id] = {
-
-                "status":
-                    "failed",
-
-                "progress":
-                    0,
-
-                "video_url":
-                    None,
-
-                "error":
-                    "Google did not return an operation name."
-            }
-
-            return
-
-        # -------------------------------------------------
-        # POLL
-        # -------------------------------------------------
-
-        for attempt in range(
-            120
-        ):
-
-            time.sleep(
-                10
-            )
-
-            status_response = requests.get(
-
-                f"{BASE_URL}/"
-                f"{operation_name}",
-
-                headers={
-
-                    "x-goog-api-key":
-                        GEMINI_API_KEY
-                },
-
-                timeout=60
-            )
-
-            if status_response.status_code != 200:
-
-                change_credits(
-                    user_id,
-                    VIDEO_COST
-                )
-
-                video_jobs[job_id] = {
-
-                    "status":
-                        "failed",
-
-                    "progress":
-                        0,
-
-                    "video_url":
-                        None,
-
-                    "error":
-                        status_response.text
-                }
-
-                return
-
-            status_data = (
-                status_response.json()
-            )
-
-            if status_data.get(
-                "done"
-            ) is True:
-
-                if "error" in status_data:
-
-                    change_credits(
-                        user_id,
-                        VIDEO_COST
-                    )
-
-                    video_jobs[job_id] = {
-
-                        "status":
-                            "failed",
-
-                        "progress":
-                            0,
-
-                        "video_url":
-                            None,
-
-                        "error":
-                            str(
-                                status_data["error"]
-                            )
-                    }
-
-                    return
-
-                video_uri = (
-                    extract_video_uri(
-                        status_data
-                    )
-                )
-
-                if not video_uri:
-
-                    change_credits(
-                        user_id,
-                        VIDEO_COST
-                    )
-
-                    video_jobs[job_id] = {
-
-                        "status":
-                            "failed",
-
-                        "progress":
-                            0,
-
-                        "video_url":
-                            None,
-
-                        "error":
-                            "Google returned no video URL."
-                    }
-
-                    return
-
-                download_response = requests.get(
-
-                    video_uri,
-
-                    headers={
-
-                        "x-goog-api-key":
-                            GEMINI_API_KEY
-                    },
-
-                    timeout=180,
-
-                    allow_redirects=True
-                )
-
-                if download_response.status_code != 200:
-
-                    change_credits(
-                        user_id,
-                        VIDEO_COST
-                    )
-
-                    video_jobs[job_id] = {
-
-                        "status":
-                            "failed",
-
-                        "progress":
-                            0,
-
-                        "video_url":
-                            None,
-
-                        "error":
-                            "Could not download video."
-                    }
-
-                    return
-
-                with open(
-                    "generated.mp4",
-                    "wb"
-                ) as f:
-
-                    f.write(
-                        download_response.content
-                    )
-
-                video_jobs[job_id] = {
-
-                    "status":
-                        "completed",
-
-                    "progress":
-                        100,
-
-                    "video_url":
-                        "/generated.mp4",
-
-                    "error":
-                        None
-                }
-
-                return
-
-            progress = min(
-                95,
-                10 + attempt
-            )
-
-            video_jobs[job_id] = {
-
-                "status":
-                    "generating",
-
-                "progress":
-                    progress,
-
-                "video_url":
-                    None,
-
-                "error":
-                    None
-            }
-
-        change_credits(
-            user_id,
-            VIDEO_COST
-        )
-
-        video_jobs[job_id] = {
-
-            "status":
-                "failed",
-
-            "progress":
-                0,
-
-            "video_url":
-                None,
-
-            "error":
-                "Video generation timed out."
-        }
-
-    except Exception as e:
-
-        print(
-            "VIDEO JOB ERROR:",
-            str(e)
-        )
-
-        change_credits(
-            user_id,
-            VIDEO_COST
-        )
-
-        video_jobs[job_id] = {
-
-            "status":
-                "failed",
-
-            "progress":
-                0,
-
-            "video_url":
-                None,
-
-            "error":
-                str(e)
-        }
-
-
-# =========================================================
-# EXTRACT VIDEO URL
-# =========================================================
-
-def extract_video_uri(
-    data
-):
-
-    try:
-
-        response = data.get(
-            "response",
-            {}
-        )
-
-        generate_response = (
-            response.get(
-                "generateVideoResponse",
-                {}
-            )
-        )
-
-        samples = (
-            generate_response.get(
-                "generatedSamples",
-                []
-            )
-        )
-
-        if samples:
-
-            video = (
-                samples[0]
-                .get(
-                    "video",
-                    {}
-                )
-            )
-
-            uri = (
-                video.get(
-                    "uri"
-                )
-            )
-
-            if uri:
-                return uri
-
-    except Exception as e:
-
-        print(
-            "VIDEO URI ERROR:",
-            str(e)
-        )
-
-    return None
-
-
-# =========================================================
-# VIDEO STATUS
-# =========================================================
-
-@app.route(
-    "/video/status/<job_id>"
-)
-@login_required
-def video_status(
-    job_id
-):
-
-    job = video_jobs.get(
-        job_id
-    )
-
-    if not job:
+        with open(video_path, "wb") as f:
+            f.write(response.content)
+
+        if os.path.getsize(video_path) == 0:
+            return jsonify({
+                "error": "Video generation returned an empty file."
+            }), 500
+
+        # Deduct only after successful generation
+        if not use_credits(user_id, VIDEO_COST):
+            return jsonify({
+                "error": "Unable to deduct credits."
+            }), 500
+
+        print("VIDEO: Success")
 
         return jsonify({
-            "error":
-                "Video job not found."
-        }), 404
+            "video_url": "/generated.mp4",
+            "credits_used": VIDEO_COST,
+            "credits_remaining": get_credits(user_id)
+        })
 
-    return jsonify({
+    except requests.Timeout:
+        print("VIDEO ERROR: Request timed out")
 
-        "status":
-            job.get(
-                "status"
-            ),
+        return jsonify({
+            "error": "Video generation timed out. Please try again."
+        }), 504
 
-        "progress":
-            job.get(
-                "progress",
-                0
-            ),
+    except Exception as e:
+        print("VIDEO ERROR:", str(e))
 
-        "video_url":
-            job.get(
-                "video_url"
-            ),
-
-        "error":
-            job.get(
-                "error"
-            )
-    })
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 
-# =========================================================
-# GENERATED VIDEO
-# =========================================================
+# =========================
+# LOCAL GENERATED VIDEO
+# =========================
 
 @app.route("/generated.mp4")
 def generated_video():
-
-    if not os.path.exists(
+    file_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
         "generated.mp4"
-    ):
+    )
 
+    if not os.path.exists(file_path):
         return jsonify({
-            "error":
-                "No generated video found."
+            "error": "Generated video not found"
         }), 404
 
     return send_file(
-        "generated.mp4",
+        file_path,
         mimetype="video/mp4"
     )
 
 
-# =========================================================
+# =========================
 # RECHARGE
-# =========================================================
+# =========================
 
-@app.route(
-    "/recharge",
-    methods=["POST"]
-)
+@app.route("/recharge", methods=["POST"])
 @login_required
 def recharge():
-
     return jsonify({
-
-        "error":
-            "Recharge is currently unavailable. "
-            "Payment system is not connected yet."
+        "error": "Recharge is currently unavailable. Payment system is not connected yet."
     }), 403
 
 
-# =========================================================
-# RUN
-# =========================================================
+# =========================
+# HEALTH CHECK
+# =========================
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "database": "postgres" if DATABASE_URL else "sqlite",
+        "pollinations_configured": bool(POLLINATIONS_API_KEY)
+    })
+
+
+# =========================
+# START SERVER
+# =========================
 
 if __name__ == "__main__":
-
-    port = int(
-        os.getenv(
-            "PORT",
-            "5000"
-        )
-    )
-
     app.run(
-
         host="0.0.0.0",
-
-        port=port,
-
-        debug=True
+        port=int(os.getenv("PORT", 5000)),
+        debug=False
     )
