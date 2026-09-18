@@ -26,10 +26,6 @@ DATABASE = "users.db"
 
 HF_TOKEN = os.getenv("HF_TOKEN") or get_token()
 
-client = InferenceClient(
-    api_key=HF_TOKEN
-)
-
 
 # =========================================================
 # CREDITS
@@ -494,6 +490,7 @@ def reserve_credits(
     return updated == 1
 # =========================================================
 # IMAGE GENERATION
+# HUGGING FACE INFERENCE PROVIDERS
 # =========================================================
 
 @app.route("/generate", methods=["POST"])
@@ -517,7 +514,7 @@ def generate():
                 "error": "Please enter a prompt"
             }), 400
 
-        # Reserve credits first
+        # Reserve 5 credits
         if not reserve_credits(
             user_id,
             IMAGE_COST
@@ -529,38 +526,28 @@ def generate():
 
         try:
 
-            from gradio_client import Client
-            from PIL import Image
-
-            image_client = Client(
-                "black-forest-labs/FLUX.1-schnell",
-                token=HF_TOKEN
+            # Create Hugging Face Inference Provider client.
+            # This does NOT use the old ZeroGPU Space.
+            image_client = InferenceClient(
+                api_key=HF_TOKEN,
+                provider="auto"
             )
 
-            result = image_client.predict(
+            image = image_client.text_to_image(
 
                 prompt,
 
-                0,
+                model="black-forest-labs/FLUX.1-schnell",
 
-                True,
+                width=1024,
 
-                1024,
+                height=1024,
 
-                1024,
-
-                4,
-
-                api_name="/infer"
+                num_inference_steps=4
 
             )
 
-            image_path = result[0]
-
-            image = Image.open(
-                image_path
-            )
-
+            # Save PIL image
             image.save(
                 "generated.png"
             )
@@ -583,7 +570,7 @@ def generate():
             )
 
             return jsonify({
-                "error": "Image generation failed. Please try again."
+                "error": "Image generation failed: " + str(e)
             }), 500
 
     except Exception as e:
@@ -644,7 +631,6 @@ def audio():
                 "error": "Please enter text"
             }), 400
 
-        # Reserve credits
         if not reserve_credits(
             user_id,
             AUDIO_COST
@@ -688,7 +674,6 @@ def audio():
 
         except Exception as e:
 
-            # Return credits if generation fails
             change_credits(
                 user_id,
                 AUDIO_COST
@@ -700,7 +685,7 @@ def audio():
             )
 
             return jsonify({
-                "error": "Audio generation failed. Please try again."
+                "error": "Audio generation failed: " + str(e)
             }), 500
 
     except Exception as e:
@@ -816,7 +801,8 @@ def generate_video_background(
 
         video_jobs[job_id] = {
             "status": "generating",
-            "message": "Video generation started"
+            "message": "Video generation started",
+            "created_at": time.time()
         }
 
         from gradio_client import Client
@@ -870,8 +856,6 @@ def generate_video_background(
                 "Could not find generated video file"
             )
 
-        # If the result is a local file,
-        # copy it to our application file.
         if os.path.exists(video_path):
 
             shutil.copy(
@@ -887,7 +871,8 @@ def generate_video_background(
 
         video_jobs[job_id] = {
             "status": "completed",
-            "video_url": "/generated.mp4"
+            "video_url": "/generated.mp4",
+            "created_at": time.time()
         }
 
     except Exception as e:
@@ -897,7 +882,6 @@ def generate_video_background(
             str(e)
         )
 
-        # Return reserved credits
         change_credits(
             user_id,
             VIDEO_COST
@@ -905,7 +889,8 @@ def generate_video_background(
 
         video_jobs[job_id] = {
             "status": "failed",
-            "message": str(e)
+            "message": str(e),
+            "created_at": time.time()
         }
 
 
@@ -934,7 +919,6 @@ def video():
                 "error": "Please enter a prompt"
             }), 400
 
-        # Reserve 21 credits
         if not reserve_credits(
             user_id,
             VIDEO_COST
@@ -950,7 +934,8 @@ def video():
 
         video_jobs[job_id] = {
             "status": "queued",
-            "message": "Video request queued"
+            "message": "Video request queued",
+            "created_at": time.time()
         }
 
         worker = threading.Thread(
@@ -1012,6 +997,27 @@ def video_status(job_id):
         }), 404
 
     return jsonify(job)
+    # =========================================================
+# GENERATED VIDEO FILE
+# =========================================================
+
+@app.route("/generated.mp4")
+def generated_video():
+
+    if not os.path.exists(
+        "generated.mp4"
+    ):
+
+        return jsonify({
+            "error": "Video not found"
+        }), 404
+
+    return send_file(
+        "generated.mp4",
+        mimetype="video/mp4"
+    )
+
+
 # =========================================================
 # RECHARGE
 # =========================================================
@@ -1082,7 +1088,10 @@ def cleanup_video_jobs():
 
                 if created_at:
 
-                    if current_time - created_at > 3600:
+                    if (
+                        current_time - created_at
+                        > 3600
+                    ):
 
                         expired_jobs.append(
                             job_id
@@ -1118,13 +1127,6 @@ cleanup_thread = threading.Thread(
 )
 
 cleanup_thread.start()
-
-
-# =========================================================
-# ADD CREATED TIME TO VIDEO JOB
-# =========================================================
-
-_original_video_function = video
 
 
 # =========================================================
