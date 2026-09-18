@@ -1,21 +1,22 @@
+import os
+import io
+import json
+import time
+import base64
+import sqlite3
+import threading
+import wave
+
+import requests
+
 from flask import Flask, request, jsonify, send_file, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
-import sqlite3
-import os
-import base64
-import wave
-import uuid
-import threading
-import time
-import requests
 
-try:
-    import psycopg2
-except ImportError:
-    psycopg2 = None
-
+# =========================================================
+# APP CONFIG
+# =========================================================
 
 app = Flask(__name__)
 
@@ -24,256 +25,319 @@ app.secret_key = os.getenv(
     "my-ai-studio-secret-key-2026"
 )
 
-
-# =========================
-# GOOGLE GEMINI
-# =========================
+BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-
+# Current Google models
 IMAGE_MODEL = "gemini-3.1-flash-image"
-
 AUDIO_MODEL = "gemini-3.1-flash-tts-preview"
-
 VIDEO_MODEL = "veo-3.1-fast-generate-preview"
-
-
-# =========================
-# CREDITS
-# =========================
-
-IMAGE_COST = 5
-AUDIO_COST = 8
-VIDEO_COST = 21
-
-NEW_USER_CREDITS = 100
-
-
-# =========================
-# DATABASE
-# =========================
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-SQLITE_DATABASE = "users.db"
+DATABASE = "users.db"
+
+# Credits
+STARTING_CREDITS = 100
+IMAGE_COST = 5
+AUDIO_COST = 8
+VIDEO_COST = 21
+GENERATE_ALL_COST = 34
 
 
-def using_postgres():
-    return bool(DATABASE_URL)
+# =========================================================
+# VIDEO JOB STORAGE
+# =========================================================
+
+video_jobs = {}
 
 
-def get_connection():
+# =========================================================
+# DATABASE
+# =========================================================
 
-    if using_postgres():
+def get_db():
+    """
+    PostgreSQL on Render.
+    SQLite locally if DATABASE_URL is not available.
+    """
 
-        if psycopg2 is None:
-            raise RuntimeError(
-                "psycopg2-binary is not installed"
-            )
+    if DATABASE_URL:
+        import psycopg2
 
         return psycopg2.connect(DATABASE_URL)
 
-    connection = sqlite3.connect(
-        SQLITE_DATABASE,
-        timeout=30
+    conn = sqlite3.connect(
+        DATABASE,
+        check_same_thread=False
     )
-
-    connection.row_factory = sqlite3.Row
-
-    return connection
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-def sql_query(query):
-
-    if using_postgres():
-        return query.replace("?", "%s")
-
-    return query
+def is_postgres():
+    return bool(DATABASE_URL)
 
 
-def init_database():
+def db_execute(query, params=(), fetchone=False, fetchall=False):
+    """
+    Small database helper that supports both
+    PostgreSQL and SQLite.
+    """
 
-    connection = get_connection()
+    conn = get_db()
 
-    cursor = connection.cursor()
+    try:
+        if is_postgres():
+            query = query.replace("?", "%s")
 
-    if using_postgres():
+        cur = conn.cursor()
+        cur.execute(query, params)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                credits INTEGER NOT NULL DEFAULT 100,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        result = None
 
-    else:
+        if fetchone:
+            row = cur.fetchone()
+            if row is not None:
+                if is_postgres():
+                    columns = [desc[0] for desc in cur.description]
+                    result = dict(zip(columns, row))
+                else:
+                    result = dict(row)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                credits INTEGER NOT NULL DEFAULT 100,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        elif fetchall:
+            rows = cur.fetchall()
 
-    connection.commit()
+            if is_postgres():
+                columns = [desc[0] for desc in cur.description]
+                result = [
+                    dict(zip(columns, row))
+                    for row in rows
+                ]
+            else:
+                result = [dict(row) for row in rows]
 
-    cursor.close()
-    connection.close()
+        conn.commit()
+        return result
 
+    except Exception:
+        conn.rollback()
+        raise
 
-init_database()
-
-
-def db_one(query, params=()):
-
-    connection = get_connection()
-
-    cursor = connection.cursor()
-
-    cursor.execute(
-        sql_query(query),
-        params
-    )
-
-    row = cursor.fetchone()
-
-    cursor.close()
-    connection.close()
-
-    return row
+    finally:
+        conn.close()
 
 
-def db_all(query, params=()):
+def init_db():
+    """
+    Create users table and credits column.
+    """
 
-    connection = get_connection()
+    conn = get_db()
 
-    cursor = connection.cursor()
+    try:
+        cur = conn.cursor()
 
-    cursor.execute(
-        sql_query(query),
-        params
-    )
+        if is_postgres():
 
-    rows = cursor.fetchall()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    credits INTEGER NOT NULL DEFAULT 100
+                )
+            """)
 
-    cursor.close()
-    connection.close()
+            cur.execute("""
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS credits INTEGER
+                NOT NULL DEFAULT 100
+            """)
 
-    return rows
+        else:
 
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    credits INTEGER NOT NULL DEFAULT 100
+                )
+            """)
 
-def reserve_credits(user_id, amount):
+            # Migration for an older SQLite database
+            cur.execute("PRAGMA table_info(users)")
+            columns = [row[1] for row in cur.fetchall()]
 
-    connection = get_connection()
+            if "credits" not in columns:
+                cur.execute("""
+                    ALTER TABLE users
+                    ADD COLUMN credits INTEGER NOT NULL DEFAULT 100
+                """)
 
-    cursor = connection.cursor()
+        conn.commit()
 
-    cursor.execute(
-        sql_query(
-            """
-            UPDATE users
-            SET credits = credits - ?
-            WHERE id = ?
-            AND credits >= ?
-            """
-        ),
-        (
-            amount,
-            user_id,
-            amount
-        )
-    )
-
-    success = cursor.rowcount == 1
-
-    connection.commit()
-
-    cursor.close()
-    connection.close()
-
-    return success
-
-
-def change_credits(user_id, amount):
-
-    connection = get_connection()
-
-    cursor = connection.cursor()
-
-    cursor.execute(
-        sql_query(
-            """
-            UPDATE users
-            SET credits = credits + ?
-            WHERE id = ?
-            """
-        ),
-        (
-            amount,
-            user_id
-        )
-    )
-
-    connection.commit()
-
-    cursor.close()
-    connection.close()
+    finally:
+        conn.close()
 
 
-def get_credits(user_id):
-
-    row = db_one(
-        "SELECT credits FROM users WHERE id = ?",
-        (user_id,)
-    )
-
-    if not row:
-        return 0
-
-    return int(row[0])
+init_db()
 
 
-# =========================
-# LOGIN REQUIRED
-# =========================
+# =========================================================
+# AUTH HELPERS
+# =========================================================
 
-def login_required(function):
+def login_required(func):
 
-    @wraps(function)
+    @wraps(func)
     def wrapper(*args, **kwargs):
 
         if "user_id" not in session:
-
             return jsonify({
                 "error": "Please login first"
             }), 401
 
-        return function(*args, **kwargs)
+        return func(*args, **kwargs)
 
     return wrapper
 
 
-# =========================
-# GOOGLE HELPERS
-# =========================
+def current_user():
+    user_id = session.get("user_id")
 
-def require_gemini_key():
+    if not user_id:
+        return None
 
-    if not GEMINI_API_KEY:
+    return db_execute(
+        """
+        SELECT id, username, credits
+        FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+        fetchone=True
+    )
 
-        raise RuntimeError(
-            "GEMINI_API_KEY is missing. "
-            "Add it in Render Environment."
-        )
 
+# =========================================================
+# CREDIT FUNCTIONS
+# =========================================================
+
+def get_user_credits(user_id):
+
+    user = db_execute(
+        """
+        SELECT credits
+        FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+        fetchone=True
+    )
+
+    if not user:
+        return 0
+
+    return int(user["credits"])
+
+
+def use_credits(user_id, amount):
+
+    conn = get_db()
+
+    try:
+
+        if is_postgres():
+
+            cur = conn.cursor()
+
+            cur.execute(
+                """
+                SELECT credits
+                FROM users
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (user_id,)
+            )
+
+            row = cur.fetchone()
+
+            if not row:
+                conn.rollback()
+                return False, 0
+
+            current = int(row[0])
+
+            if current < amount:
+                conn.rollback()
+                return False, current
+
+            new_balance = current - amount
+
+            cur.execute(
+                """
+                UPDATE users
+                SET credits = %s
+                WHERE id = %s
+                """,
+                (new_balance, user_id)
+            )
+
+        else:
+
+            cur = conn.cursor()
+
+            cur.execute(
+                """
+                SELECT credits
+                FROM users
+                WHERE id = ?
+                """,
+                (user_id,)
+            )
+
+            row = cur.fetchone()
+
+            if not row:
+                conn.rollback()
+                return False, 0
+
+            current = int(row[0])
+
+            if current < amount:
+                conn.rollback()
+                return False, current
+
+            new_balance = current - amount
+
+            cur.execute(
+                """
+                UPDATE users
+                SET credits = ?
+                WHERE id = ?
+                """,
+                (new_balance, user_id)
+            )
+
+        conn.commit()
+
+        return True, new_balance
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+
+# =========================================================
+# GEMINI REQUEST HELPER
+# =========================================================
 
 def gemini_headers():
 
@@ -283,384 +347,246 @@ def gemini_headers():
     }
 
 
-def gemini_error(response):
+def check_gemini_key():
 
-    try:
+    if not GEMINI_API_KEY:
+        return False, "GEMINI_API_KEY is not configured on the server."
 
-        data = response.json()
-
-        error = data.get("error", {})
-
-        message = (
-            error.get("message")
-            or data.get("message")
-            or str(data)
-        )
-
-        return str(message)
-
-    except Exception:
-
-        return (
-            response.text[:1000]
-            or f"HTTP {response.status_code}"
-        )
+    return True, None
 
 
-def extract_output_data(data, wanted_type):
-
-    if not isinstance(data, dict):
-        return None
-
-
-    # Direct output_image / output_audio
-
-    if wanted_type == "image":
-
-        output = data.get("output_image")
-
-    else:
-
-        output = data.get("output_audio")
-
-
-    if isinstance(output, dict):
-
-        if output.get("data"):
-            return output["data"]
-
-
-    # Steps
-
-    steps = data.get("steps", [])
-
-    for step in steps:
-
-        if not isinstance(step, dict):
-            continue
-
-        content = step.get("content", [])
-
-        if isinstance(content, dict):
-            content = [content]
-
-        for block in content:
-
-            if not isinstance(block, dict):
-                continue
-
-            if block.get("type") == wanted_type:
-
-                if block.get("data"):
-                    return block["data"]
-
-
-    return None
-
-
-# =========================
-# HOME / HEALTH
-# =========================
+# =========================================================
+# BASIC ROUTES
+# =========================================================
 
 @app.route("/")
 def home():
 
-    return send_file("index.html")
+    return app.send_static_file("index.html")
 
 
 @app.route("/health")
 def health():
 
     return jsonify({
-        "ok": True,
-        "database": (
-            "postgres"
-            if using_postgres()
-            else "sqlite"
-        ),
-        "gemini_configured": bool(
-            GEMINI_API_KEY
-        )
+        "status": "ok",
+        "database": "postgresql" if DATABASE_URL else "sqlite",
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "image_model": IMAGE_MODEL,
+        "audio_model": AUDIO_MODEL,
+        "video_model": VIDEO_MODEL
     })
 
 
-# =========================
+# =========================================================
 # REGISTER
-# =========================
+# =========================================================
 
 @app.route("/register", methods=["POST"])
 def register():
 
     try:
 
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
 
-        username = data.get(
-            "username",
-            ""
+        username = str(
+            data.get("username", "")
         ).strip()
 
-        password = data.get(
-            "password",
-            ""
+        password = str(
+            data.get("password", "")
         )
 
+        if not username or not password:
+            return jsonify({
+                "error": "Username and password are required."
+            }), 400
 
         if len(username) < 3:
-
             return jsonify({
-                "error":
-                "Username must be at least 3 characters"
+                "error": "Username must be at least 3 characters."
             }), 400
-
 
         if len(password) < 4:
-
             return jsonify({
-                "error":
-                "Password must be at least 4 characters"
+                "error": "Password must be at least 4 characters."
             }), 400
 
-
-        existing = db_one(
-            "SELECT id FROM users WHERE username = ?",
-            (username,)
+        existing = db_execute(
+            """
+            SELECT id
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+            fetchone=True
         )
-
 
         if existing:
-
             return jsonify({
-                "error":
-                "Username already exists"
+                "error": "Username already exists."
             }), 409
 
+        hashed_password = generate_password_hash(password)
 
-        password_hash = generate_password_hash(
-            password
+        db_execute(
+            """
+            INSERT INTO users
+            (username, password, credits)
+            VALUES (?, ?, ?)
+            """,
+            (
+                username,
+                hashed_password,
+                STARTING_CREDITS
+            )
         )
 
-
-        connection = get_connection()
-
-        cursor = connection.cursor()
-
-
-        if using_postgres():
-
-            cursor.execute(
-                sql_query(
-                    """
-                    INSERT INTO users
-                    (username, password, credits)
-                    VALUES (?, ?, ?)
-                    RETURNING id
-                    """
-                ),
-                (
-                    username,
-                    password_hash,
-                    NEW_USER_CREDITS
-                )
-            )
-
-            user_id = cursor.fetchone()[0]
-
-
-        else:
-
-            cursor.execute(
-                """
-                INSERT INTO users
-                (username, password, credits)
-                VALUES (?, ?, ?)
-                """,
-                (
-                    username,
-                    password_hash,
-                    NEW_USER_CREDITS
-                )
-            )
-
-            user_id = cursor.lastrowid
-
-
-        connection.commit()
-
-        cursor.close()
-        connection.close()
-
-
-        session["user_id"] = user_id
-
-        session["username"] = username
-
-
         return jsonify({
-            "message":
-            "Registration successful",
-
-            "username":
-            username,
-
-            "credits":
-            NEW_USER_CREDITS
+            "success": True,
+            "message": "Registration successful.",
+            "credits": STARTING_CREDITS
         })
-
 
     except Exception as e:
 
-        print(
-            "REGISTER ERROR:",
-            str(e)
-        )
+        print("REGISTER ERROR:", str(e))
 
         return jsonify({
-            "error":
-            "Registration failed: "
-            + str(e)
+            "error": "Registration failed."
         }), 500
 
 
-# =========================
+# =========================================================
 # LOGIN
-# =========================
+# =========================================================
 
 @app.route("/login", methods=["POST"])
 def login():
 
     try:
 
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
 
-        username = data.get(
-            "username",
-            ""
+        username = str(
+            data.get("username", "")
         ).strip()
 
-        password = data.get(
-            "password",
-            ""
+        password = str(
+            data.get("password", "")
         )
 
+        if not username or not password:
+            return jsonify({
+                "error": "Username and password are required."
+            }), 400
 
-        row = db_one(
+        user = db_execute(
             """
-            SELECT id, password
+            SELECT id, username, password, credits
             FROM users
             WHERE username = ?
             """,
-            (username,)
+            (username,),
+            fetchone=True
         )
 
+        if not user:
 
-        if (
-            not row
-            or not check_password_hash(
-                row[1],
-                password
-            )
+            return jsonify({
+                "error": "Invalid username or password."
+            }), 401
+
+        if not check_password_hash(
+            user["password"],
+            password
         ):
 
             return jsonify({
-                "error":
-                "Invalid username or password"
+                "error": "Invalid username or password."
             }), 401
 
-
-        session["user_id"] = row[0]
-
-        session["username"] = username
-
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
 
         return jsonify({
-            "message":
-            "Login successful",
-
-            "username":
-            username,
-
-            "credits":
-            get_credits(row[0])
+            "success": True,
+            "username": user["username"],
+            "credits": int(user["credits"])
         })
-
 
     except Exception as e:
 
-        print(
-            "LOGIN ERROR:",
-            str(e)
-        )
+        print("LOGIN ERROR:", str(e))
 
         return jsonify({
-            "error":
-            "Login failed: "
-            + str(e)
+            "error": "Login failed."
         }), 500
 
 
-# =========================
+# =========================================================
 # ME
-# =========================
+# =========================================================
 
 @app.route("/me")
 def me():
 
-    if "user_id" in session:
+    user = current_user()
+
+    if not user:
 
         return jsonify({
-
-            "logged_in":
-            True,
-
-            "username":
-            session.get("username"),
-
-            "credits":
-            get_credits(
-                session["user_id"]
-            )
-
+            "logged_in": False
         })
 
-
     return jsonify({
-        "logged_in": False
+        "logged_in": True,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "credits": int(user["credits"])
+        }
     })
 
 
-# =========================
+# =========================================================
 # LOGOUT
-# =========================
+# =========================================================
 
-@app.route("/logout", methods=["POST"])
+@app.route("/logout")
 def logout():
 
     session.clear()
 
     return jsonify({
-        "message":
-        "Logged out successfully"
+        "success": True
     })
 
 
-# =========================
+# =========================================================
 # CREDITS
-# =========================
+# =========================================================
 
 @app.route("/credits")
 @login_required
 def credits():
 
+    user_id = session["user_id"]
+
+    balance = get_user_credits(user_id)
+
     return jsonify({
-        "credits":
-        get_credits(
-            session["user_id"]
-        )
+        "credits": balance,
+        "costs": {
+            "image": IMAGE_COST,
+            "audio": AUDIO_COST,
+            "video": VIDEO_COST,
+            "generate_all": GENERATE_ALL_COST
+        }
     })
-# =========================
+# =========================================================
 # IMAGE GENERATION
-# =========================
+# =========================================================
 
 @app.route("/generate", methods=["POST"])
 @login_required
@@ -670,161 +596,243 @@ def generate():
 
     try:
 
-        data = request.get_json() or {}
+        # Check API key
+        key_ok, key_error = check_gemini_key()
 
-        prompt = data.get(
-            "prompt",
-            ""
+        if not key_ok:
+            return jsonify({
+                "error": key_error
+            }), 500
+
+        data = request.get_json(silent=True) or {}
+
+        prompt = str(
+            data.get("prompt", "")
         ).strip()
-
 
         if not prompt:
 
             return jsonify({
-                "error":
-                "Please enter a prompt"
+                "error": "Please enter a prompt."
             }), 400
 
-
-        if not reserve_credits(
+        # Deduct image credits
+        success, balance = use_credits(
             user_id,
             IMAGE_COST
-        ):
+        )
+
+        if not success:
 
             return jsonify({
-                "error":
-                "Your credits are finished. "
-                "Please recharge to continue."
+                "error": "Your credits are finished. Please recharge to continue.",
+                "credits": balance
             }), 402
 
+        # -------------------------------------------------
+        # IMPORTANT:
+        # Google Gemini 3.1 Flash Image
+        #
+        # We intentionally DO NOT send:
+        # "mime_type": "image/png"
+        #
+        # because the current request that was failing
+        # rejected that value in this configuration.
+        # -------------------------------------------------
 
-        try:
+        payload = {
+            "model": IMAGE_MODEL,
 
-            require_gemini_key()
+            "input": prompt,
 
-
-            payload = {
-
-                "model":
-                IMAGE_MODEL,
-
-                "input":
-                prompt,
-
-                "response_format": {
-
-                    "type":
-                    "image",
-
-                    "mime_type":
-                    "image/png",
-
-                    "aspect_ratio":
-                    "16:9",
-
-                    "image_size":
-                    "1K"
-                }
+            "response_format": {
+                "type": "image",
+                "aspect_ratio": "16:9",
+                "image_size": "1K"
             }
+        }
 
+        response = requests.post(
+            f"{BASE_URL}/interactions",
+            headers=gemini_headers(),
+            json=payload,
+            timeout=180
+        )
 
-            response = requests.post(
+        print(
+            "IMAGE STATUS:",
+            response.status_code
+        )
 
-                GEMINI_BASE
-                + "/interactions",
+        print(
+            "IMAGE RESPONSE:",
+            response.text[:3000]
+        )
 
-                headers=
-                gemini_headers(),
+        if response.status_code != 200:
 
-                json=
-                payload,
-
-                timeout=180
-            )
-
-
-            if not response.ok:
-
-                raise RuntimeError(
-                    gemini_error(response)
-                )
-
-
-            result = response.json()
-
-
-            image_b64 = extract_output_data(
-                result,
-                "image"
-            )
-
-
-            if not image_b64:
-
-                raise RuntimeError(
-                    "Google returned no image data."
-                )
-
-
-            with open(
-                "generated.png",
-                "wb"
-            ) as image_file:
-
-                image_file.write(
-                    base64.b64decode(
-                        image_b64
-                    )
-                )
-
-
-            return jsonify({
-
-                "image_url":
-                "/generated.png",
-
-                "credits":
-                get_credits(user_id)
-
-            })
-
-
-        except Exception as e:
-
-            change_credits(
+            # Refund credits if Google rejected request
+            refund_credits(
                 user_id,
                 IMAGE_COST
             )
 
-            print(
-                "IMAGE ERROR:",
-                str(e)
+            try:
+                error_data = response.json()
+            except Exception:
+                error_data = response.text
+
+            return jsonify({
+                "error": "Image generation failed.",
+                "details": error_data
+            }), response.status_code
+
+        result = response.json()
+
+        # -------------------------------------------------
+        # Current Interactions API output
+        # -------------------------------------------------
+
+        image_data = None
+
+        if isinstance(result, dict):
+
+            output_image = result.get(
+                "output_image"
+            )
+
+            if isinstance(output_image, dict):
+
+                image_data = output_image.get(
+                    "data"
+                )
+
+        # -------------------------------------------------
+        # Fallback: inspect steps
+        # -------------------------------------------------
+
+        if not image_data:
+
+            steps = result.get(
+                "steps",
+                []
+            )
+
+            if isinstance(steps, list):
+
+                for step in steps:
+
+                    if not isinstance(step, dict):
+                        continue
+
+                    content = step.get(
+                        "content",
+                        []
+                    )
+
+                    if not isinstance(content, list):
+                        continue
+
+                    for block in content:
+
+                        if not isinstance(block, dict):
+                            continue
+
+                        if block.get("type") == "image":
+
+                            image_data = block.get(
+                                "data"
+                            )
+
+                            if image_data:
+                                break
+
+                    if image_data:
+                        break
+
+        if not image_data:
+
+            # Refund because no image was returned
+            refund_credits(
+                user_id,
+                IMAGE_COST
             )
 
             return jsonify({
-
-                "error":
-                "Image generation failed: "
-                + str(e)
-
+                "error": "Google returned no image data.",
+                "response": result
             }), 500
 
+        # -------------------------------------------------
+        # Decode base64 image
+        # -------------------------------------------------
+
+        try:
+
+            image_bytes = base64.b64decode(
+                image_data
+            )
+
+        except Exception as e:
+
+            refund_credits(
+                user_id,
+                IMAGE_COST
+            )
+
+            return jsonify({
+                "error": "Could not decode generated image.",
+                "details": str(e)
+            }), 500
+
+        # Save image
+        with open(
+            "generated.png",
+            "wb"
+        ) as image_file:
+
+            image_file.write(
+                image_bytes
+            )
+
+        return jsonify({
+            "success": True,
+            "image_url": "/generated.png",
+            "credits": get_user_credits(user_id)
+        })
+
+    except requests.exceptions.Timeout:
+
+        refund_credits(
+            user_id,
+            IMAGE_COST
+        )
+
+        return jsonify({
+            "error": "Image generation timed out."
+        }), 504
 
     except Exception as e:
 
         print(
-            "GENERATE ERROR:",
+            "IMAGE ERROR:",
             str(e)
         )
 
+        refund_credits(
+            user_id,
+            IMAGE_COST
+        )
+
         return jsonify({
-
-            "error":
-            "Something went wrong: "
-            + str(e)
-
+            "error": "Image generation failed.",
+            "details": str(e)
         }), 500
 
+
+# =========================================================
+# IMAGE FILE
+# =========================================================
 
 @app.route("/generated.png")
 def generated_image():
@@ -834,10 +842,8 @@ def generated_image():
     ):
 
         return jsonify({
-            "error":
-            "No image generated yet"
+            "error": "No generated image found."
         }), 404
-
 
     return send_file(
         "generated.png",
@@ -845,9 +851,65 @@ def generated_image():
     )
 
 
-# =========================
-# AUDIO / TTS
-# =========================
+# =========================================================
+# REFUND CREDITS
+# =========================================================
+
+def refund_credits(user_id, amount):
+
+    conn = get_db()
+
+    try:
+
+        cur = conn.cursor()
+
+        if is_postgres():
+
+            cur.execute(
+                """
+                UPDATE users
+                SET credits = credits + %s
+                WHERE id = %s
+                """,
+                (
+                    amount,
+                    user_id
+                )
+            )
+
+        else:
+
+            cur.execute(
+                """
+                UPDATE users
+                SET credits = credits + ?
+                WHERE id = ?
+                """,
+                (
+                    amount,
+                    user_id
+                )
+            )
+
+        conn.commit()
+
+    except Exception as e:
+
+        conn.rollback()
+
+        print(
+            "REFUND ERROR:",
+            str(e)
+        )
+
+    finally:
+
+        conn.close()
+
+
+# =========================================================
+# AUDIO GENERATION
+# =========================================================
 
 @app.route("/audio", methods=["POST"])
 @login_required
@@ -857,173 +919,230 @@ def audio():
 
     try:
 
-        data = request.get_json() or {}
+        key_ok, key_error = check_gemini_key()
 
-        text = data.get(
-            "text",
-            ""
+        if not key_ok:
+
+            return jsonify({
+                "error": key_error
+            }), 500
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        text = str(
+            data.get("text", "")
         ).strip()
 
+        # Frontend may send prompt instead of text
+        if not text:
+            text = str(
+                data.get("prompt", "")
+            ).strip()
 
         if not text:
 
             return jsonify({
-                "error":
-                "Please enter text"
+                "error": "Please enter text."
             }), 400
 
-
-        if not reserve_credits(
+        success, balance = use_credits(
             user_id,
             AUDIO_COST
-        ):
+        )
+
+        if not success:
 
             return jsonify({
-                "error":
-                "Your credits are finished. "
-                "Please recharge to continue."
+                "error": "Your credits are finished. Please recharge to continue.",
+                "credits": balance
             }), 402
 
+        payload = {
 
-        try:
+            "model": AUDIO_MODEL,
 
-            require_gemini_key()
+            "input": (
+                "Speak the following text naturally and clearly. "
+                "Do not add extra words.\n\n"
+                + text
+            ),
 
+            "response_format": {
+                "type": "audio"
+            },
 
-            payload = {
+            "generation_config": {
 
-                "model":
-                AUDIO_MODEL,
-
-                "input":
-                text,
-
-                "response_format": {
-
-                    "type":
-                    "audio"
-                },
-
-                "generation_config": {
-
-                    "speech_config": [
-
-                        {
-                            "voice":
-                            "Kore"
-                        }
-
-                    ]
-
-                }
-
+                "speech_config": [
+                    {
+                        "voice": "Kore"
+                    }
+                ]
             }
+        }
 
+        response = requests.post(
+            f"{BASE_URL}/interactions",
+            headers=gemini_headers(),
+            json=payload,
+            timeout=180
+        )
 
-            response = requests.post(
+        print(
+            "AUDIO STATUS:",
+            response.status_code
+        )
 
-                GEMINI_BASE
-                + "/interactions",
+        print(
+            "AUDIO RESPONSE:",
+            response.text[:2000]
+        )
 
-                headers=
-                gemini_headers(),
+        if response.status_code != 200:
 
-                json=
-                payload,
-
-                timeout=180
-            )
-
-
-            if not response.ok:
-
-                raise RuntimeError(
-                    gemini_error(response)
-                )
-
-
-            result = response.json()
-
-
-            audio_b64 = extract_output_data(
-                result,
-                "audio"
-            )
-
-
-            if not audio_b64:
-
-                raise RuntimeError(
-                    "Google returned no audio data."
-                )
-
-
-            pcm = base64.b64decode(
-                audio_b64
-            )
-
-
-            with wave.open(
-                "generated.wav",
-                "wb"
-            ) as wf:
-
-                wf.setnchannels(1)
-
-                wf.setsampwidth(2)
-
-                wf.setframerate(24000)
-
-                wf.writeframes(pcm)
-
-
-            return jsonify({
-
-                "audio_url":
-                "/generated.wav",
-
-                "credits":
-                get_credits(user_id)
-
-            })
-
-
-        except Exception as e:
-
-            change_credits(
+            refund_credits(
                 user_id,
                 AUDIO_COST
             )
 
-            print(
-                "AUDIO ERROR:",
-                str(e)
+            try:
+                error_data = response.json()
+            except Exception:
+                error_data = response.text
+
+            return jsonify({
+                "error": "Audio generation failed.",
+                "details": error_data
+            }), response.status_code
+
+        result = response.json()
+
+        audio_data = None
+
+        output_audio = result.get(
+            "output_audio"
+        )
+
+        if isinstance(
+            output_audio,
+            dict
+        ):
+
+            audio_data = output_audio.get(
+                "data"
+            )
+
+        if not audio_data:
+
+            refund_credits(
+                user_id,
+                AUDIO_COST
             )
 
             return jsonify({
-
-                "error":
-                "Audio generation failed: "
-                + str(e)
-
+                "error": "Google returned no audio data.",
+                "response": result
             }), 500
 
+        try:
+
+            pcm_bytes = base64.b64decode(
+                audio_data
+            )
+
+        except Exception as e:
+
+            refund_credits(
+                user_id,
+                AUDIO_COST
+            )
+
+            return jsonify({
+                "error": "Could not decode generated audio.",
+                "details": str(e)
+            }), 500
+
+        # Gemini TTS returns PCM.
+        # Convert PCM to WAV.
+        save_pcm_as_wav(
+            pcm_bytes,
+            "generated.wav"
+        )
+
+        return jsonify({
+            "success": True,
+            "audio_url": "/generated.wav",
+            "credits": get_user_credits(user_id)
+        })
+
+    except requests.exceptions.Timeout:
+
+        refund_credits(
+            user_id,
+            AUDIO_COST
+        )
+
+        return jsonify({
+            "error": "Audio generation timed out."
+        }), 504
 
     except Exception as e:
 
         print(
-            "AUDIO ROUTE ERROR:",
+            "AUDIO ERROR:",
             str(e)
         )
 
+        refund_credits(
+            user_id,
+            AUDIO_COST
+        )
+
         return jsonify({
-
-            "error":
-            "Something went wrong: "
-            + str(e)
-
+            "error": "Audio generation failed.",
+            "details": str(e)
         }), 500
 
+
+# =========================================================
+# PCM -> WAV
+# =========================================================
+
+def save_pcm_as_wav(
+    pcm_data,
+    filename,
+    sample_rate=24000,
+    channels=1,
+    sample_width=2
+):
+
+    with wave.open(
+        filename,
+        "wb"
+    ) as wav_file:
+
+        wav_file.setnchannels(
+            channels
+        )
+
+        wav_file.setsampwidth(
+            sample_width
+        )
+
+        wav_file.setframerate(
+            sample_rate
+        )
+
+        wav_file.writeframes(
+            pcm_data
+        )
+
+
+# =========================================================
+# AUDIO FILE
+# =========================================================
 
 @app.route("/generated.wav")
 def generated_audio():
@@ -1033,308 +1152,16 @@ def generated_audio():
     ):
 
         return jsonify({
-            "error":
-            "No audio generated yet"
+            "error": "No generated audio found."
         }), 404
-
 
     return send_file(
         "generated.wav",
         mimetype="audio/wav"
     )
-
-
-# =========================
-# VIDEO JOB STORAGE
-# =========================
-
-video_jobs = {}
-
-video_jobs_lock = threading.Lock()
-
-
-# =========================
-# VIDEO WORKER
-# =========================
-
-def video_worker(
-    job_id,
-    user_id,
-    prompt
-):
-
-    try:
-
-        require_gemini_key()
-
-
-        payload = {
-
-            "instances": [
-
-                {
-                    "prompt":
-                    prompt
-                }
-
-            ],
-
-            "parameters": {
-
-                "aspectRatio":
-                "16:9",
-
-                "resolution":
-                "720p",
-
-                "durationSeconds":
-                "8",
-
-                "numberOfVideos":
-                1
-
-            }
-
-        }
-
-
-        response = requests.post(
-
-            GEMINI_BASE
-            + "/models/"
-            + VIDEO_MODEL
-            + ":predictLongRunning",
-
-            headers=
-            gemini_headers(),
-
-            json=
-            payload,
-
-            timeout=60
-        )
-
-
-        if not response.ok:
-
-            raise RuntimeError(
-                gemini_error(response)
-            )
-
-
-        operation = response.json()
-
-
-        operation_name = operation.get(
-            "name"
-        )
-
-
-        if not operation_name:
-
-            raise RuntimeError(
-                "Google did not return "
-                "a video operation."
-            )
-
-
-        with video_jobs_lock:
-
-            video_jobs[job_id][
-                "status"
-            ] = "processing"
-
-
-        deadline = time.time() + 900
-
-
-        while time.time() < deadline:
-
-            time.sleep(10)
-
-
-            status_response = requests.get(
-
-                GEMINI_BASE
-                + "/"
-                + operation_name,
-
-                headers={
-                    "x-goog-api-key":
-                    GEMINI_API_KEY
-                },
-
-                timeout=60
-            )
-
-
-            if not status_response.ok:
-
-                raise RuntimeError(
-                    gemini_error(
-                        status_response
-                    )
-                )
-
-
-            status = status_response.json()
-
-
-            if not status.get("done"):
-
-                continue
-
-
-            if status.get("error"):
-
-                raise RuntimeError(
-
-                    status["error"].get(
-                        "message",
-                        "Video generation failed"
-                    )
-
-                )
-
-
-            samples = (
-
-                status
-
-                .get("response", {})
-
-                .get(
-                    "generateVideoResponse",
-                    {}
-                )
-
-                .get(
-                    "generatedSamples",
-                    []
-                )
-
-            )
-
-
-            if not samples:
-
-                raise RuntimeError(
-                    "Google returned no generated video."
-                )
-
-
-            video_info = samples[0].get(
-                "video",
-                {}
-            )
-
-
-            video_uri = video_info.get(
-                "uri"
-            )
-
-
-            if not video_uri:
-
-                raise RuntimeError(
-                    "Google returned no video URL."
-                )
-
-
-            video_response = requests.get(
-
-                video_uri,
-
-                headers={
-                    "x-goog-api-key":
-                    GEMINI_API_KEY
-                },
-
-                timeout=180
-            )
-
-
-            if not video_response.ok:
-
-                raise RuntimeError(
-                    "Could not download generated video: "
-                    + gemini_error(
-                        video_response
-                    )
-                )
-
-
-            with open(
-                "generated.mp4",
-                "wb"
-            ) as video_file:
-
-                video_file.write(
-                    video_response.content
-                )
-
-
-            with video_jobs_lock:
-
-                video_jobs[job_id][
-                    "status"
-                ] = "completed"
-
-                video_jobs[job_id][
-                    "video_url"
-                ] = "/generated.mp4"
-
-                video_jobs[job_id][
-                    "credits"
-                ] = get_credits(
-                    user_id
-                )
-
-
-            return
-
-
-        raise RuntimeError(
-            "Video generation timed out."
-        )
-
-
-    except Exception as e:
-
-        print(
-            "VIDEO ERROR:",
-            str(e)
-        )
-
-
-        # Give credits back if generation failed
-
-        change_credits(
-            user_id,
-            VIDEO_COST
-        )
-
-
-        with video_jobs_lock:
-
-            video_jobs[job_id][
-                "status"
-            ] = "failed"
-
-            video_jobs[job_id][
-                "error"
-            ] = str(e)
-
-            video_jobs[job_id][
-                "credits"
-            ] = get_credits(
-                user_id
-            )
-
-
-# =========================
-# VIDEO START
-# =========================
+    # =========================================================
+# VIDEO GENERATION
+# =========================================================
 
 @app.route("/video", methods=["POST"])
 @login_required
@@ -1344,135 +1171,438 @@ def video():
 
     try:
 
-        data = request.get_json() or {}
+        key_ok, key_error = check_gemini_key()
 
-        prompt = data.get(
-            "prompt",
-            ""
+        if not key_ok:
+
+            return jsonify({
+                "error": key_error
+            }), 500
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        prompt = str(
+            data.get("prompt", "")
         ).strip()
-
 
         if not prompt:
 
             return jsonify({
-                "error":
-                "Please enter a prompt"
+                "error": "Please enter a prompt."
             }), 400
 
-
-        if not reserve_credits(
+        success, balance = use_credits(
             user_id,
             VIDEO_COST
-        ):
+        )
+
+        if not success:
 
             return jsonify({
-                "error":
-                "Your credits are finished. "
-                "Please recharge to continue."
+                "error": "Your credits are finished. Please recharge to continue.",
+                "credits": balance
             }), 402
 
+        # Create local job ID
+        job_id = str(
+            int(time.time() * 1000)
+        ) + "_" + str(user_id)
 
-        job_id = uuid.uuid4().hex
+        video_jobs[job_id] = {
+            "status": "starting",
+            "progress": 0,
+            "video_url": None,
+            "error": None
+        }
 
-
-        with video_jobs_lock:
-
-            video_jobs[job_id] = {
-
-                "status":
-                "starting",
-
-                "video_url":
-                None,
-
-                "error":
-                None,
-
-                "credits":
-                get_credits(user_id)
-
-            }
-
-
+        # Start generation in background
         thread = threading.Thread(
-
-            target=video_worker,
-
+            target=generate_video_job,
             args=(
                 job_id,
                 user_id,
                 prompt
             ),
-
             daemon=True
         )
 
-
         thread.start()
 
-
         return jsonify({
-
-            "job_id":
-            job_id,
-
-            "status":
-            "starting",
-
-            "credits":
-            get_credits(user_id)
-
+            "success": True,
+            "job_id": job_id,
+            "credits": get_user_credits(user_id)
         })
-
 
     except Exception as e:
 
         print(
-            "VIDEO ROUTE ERROR:",
+            "VIDEO ERROR:",
             str(e)
         )
 
         return jsonify({
-
-            "error":
-            "Video request failed: "
-            + str(e)
-
+            "error": "Video generation failed.",
+            "details": str(e)
         }), 500
-    # =========================
+
+
+# =========================================================
+# VIDEO BACKGROUND JOB
+# =========================================================
+
+def generate_video_job(
+    job_id,
+    user_id,
+    prompt
+):
+
+    try:
+
+        video_jobs[job_id] = {
+            "status": "generating",
+            "progress": 5,
+            "video_url": None,
+            "error": None
+        }
+
+        # -------------------------------------------------
+        # Current Veo 3.1 Fast API
+        # -------------------------------------------------
+
+        payload = {
+            "instances": [
+                {
+                    "prompt": prompt
+                }
+            ],
+
+            "parameters": {
+                "aspectRatio": "16:9",
+                "resolution": "720p",
+                "durationSeconds": "8",
+                "numberOfVideos": 1
+            }
+        }
+
+        response = requests.post(
+            f"{BASE_URL}/models/{VIDEO_MODEL}:predictLongRunning",
+            headers=gemini_headers(),
+            json=payload,
+            timeout=120
+        )
+
+        print(
+            "VIDEO START STATUS:",
+            response.status_code
+        )
+
+        print(
+            "VIDEO START RESPONSE:",
+            response.text[:3000]
+        )
+
+        if response.status_code != 200:
+
+            refund_credits(
+                user_id,
+                VIDEO_COST
+            )
+
+            try:
+                error_data = response.json()
+            except Exception:
+                error_data = response.text
+
+            video_jobs[job_id] = {
+                "status": "failed",
+                "progress": 0,
+                "video_url": None,
+                "error": str(error_data)
+            }
+
+            return
+
+        operation = response.json()
+
+        operation_name = operation.get(
+            "name"
+        )
+
+        if not operation_name:
+
+            refund_credits(
+                user_id,
+                VIDEO_COST
+            )
+
+            video_jobs[job_id] = {
+                "status": "failed",
+                "progress": 0,
+                "video_url": None,
+                "error": "Google did not return an operation name."
+            }
+
+            return
+
+        # -------------------------------------------------
+        # Poll operation
+        # -------------------------------------------------
+
+        for attempt in range(120):
+
+            time.sleep(10)
+
+            status_response = requests.get(
+                f"{BASE_URL}/{operation_name}",
+                headers={
+                    "x-goog-api-key": GEMINI_API_KEY
+                },
+                timeout=60
+            )
+
+            print(
+                "VIDEO POLL:",
+                status_response.status_code
+            )
+
+            if status_response.status_code != 200:
+
+                refund_credits(
+                    user_id,
+                    VIDEO_COST
+                )
+
+                video_jobs[job_id] = {
+                    "status": "failed",
+                    "progress": 0,
+                    "video_url": None,
+                    "error": status_response.text
+                }
+
+                return
+
+            status_data = status_response.json()
+
+            if status_data.get("done") is True:
+
+                # Check Google error
+                if "error" in status_data:
+
+                    refund_credits(
+                        user_id,
+                        VIDEO_COST
+                    )
+
+                    video_jobs[job_id] = {
+                        "status": "failed",
+                        "progress": 0,
+                        "video_url": None,
+                        "error": str(
+                            status_data["error"]
+                        )
+                    }
+
+                    return
+
+                video_uri = extract_video_uri(
+                    status_data
+                )
+
+                if not video_uri:
+
+                    refund_credits(
+                        user_id,
+                        VIDEO_COST
+                    )
+
+                    video_jobs[job_id] = {
+                        "status": "failed",
+                        "progress": 0,
+                        "video_url": None,
+                        "error": (
+                            "Video completed but "
+                            "Google returned no video URL."
+                        )
+                    }
+
+                    return
+
+                # Download video
+                download_response = requests.get(
+                    video_uri,
+                    headers={
+                        "x-goog-api-key": GEMINI_API_KEY
+                    },
+                    timeout=180,
+                    allow_redirects=True
+                )
+
+                if download_response.status_code != 200:
+
+                    refund_credits(
+                        user_id,
+                        VIDEO_COST
+                    )
+
+                    video_jobs[job_id] = {
+                        "status": "failed",
+                        "progress": 0,
+                        "video_url": None,
+                        "error": (
+                            "Could not download generated video."
+                        )
+                    }
+
+                    return
+
+                with open(
+                    "generated.mp4",
+                    "wb"
+                ) as video_file:
+
+                    video_file.write(
+                        download_response.content
+                    )
+
+                video_jobs[job_id] = {
+                    "status": "completed",
+                    "progress": 100,
+                    "video_url": "/generated.mp4",
+                    "error": None
+                }
+
+                return
+
+            # Still running
+            progress = min(
+                95,
+                10 + (attempt * 1)
+            )
+
+            video_jobs[job_id] = {
+                "status": "generating",
+                "progress": progress,
+                "video_url": None,
+                "error": None
+            }
+
+        # Timeout
+        refund_credits(
+            user_id,
+            VIDEO_COST
+        )
+
+        video_jobs[job_id] = {
+            "status": "failed",
+            "progress": 0,
+            "video_url": None,
+            "error": "Video generation timed out."
+        }
+
+    except Exception as e:
+
+        print(
+            "VIDEO JOB ERROR:",
+            str(e)
+        )
+
+        refund_credits(
+            user_id,
+            VIDEO_COST
+        )
+
+        video_jobs[job_id] = {
+            "status": "failed",
+            "progress": 0,
+            "video_url": None,
+            "error": str(e)
+        }
+
+
+# =========================================================
+# EXTRACT VIDEO URI
+# =========================================================
+
+def extract_video_uri(data):
+
+    try:
+
+        response = data.get(
+            "response",
+            {}
+        )
+
+        generate_response = response.get(
+            "generateVideoResponse",
+            {}
+        )
+
+        generated_samples = generate_response.get(
+            "generatedSamples",
+            []
+        )
+
+        if generated_samples:
+
+            first_sample = generated_samples[0]
+
+            video = first_sample.get(
+                "video",
+                {}
+            )
+
+            uri = video.get(
+                "uri"
+            )
+
+            if uri:
+                return uri
+
+    except Exception as e:
+
+        print(
+            "VIDEO URI ERROR:",
+            str(e)
+        )
+
+    return None
+
+
+# =========================================================
 # VIDEO STATUS
-# =========================
+# =========================================================
 
 @app.route(
-    "/video/status/<job_id>"
+    "/video/status/<job_id>",
+    methods=["GET"]
 )
 @login_required
 def video_status(job_id):
 
-    with video_jobs_lock:
-
-        job = video_jobs.get(
-            job_id
-        )
-
+    job = video_jobs.get(
+        job_id
+    )
 
     if not job:
 
         return jsonify({
-
-            "error":
-            "Video job not found. "
-            "The server may have restarted."
-
+            "error": "Video job not found."
         }), 404
 
+    return jsonify({
+        "status": job.get("status"),
+        "progress": job.get("progress", 0),
+        "video_url": job.get("video_url"),
+        "error": job.get("error")
+    })
 
-    return jsonify(job)
 
-
-# =========================
+# =========================================================
 # VIDEO FILE
-# =========================
+# =========================================================
 
 @app.route("/generated.mp4")
 def generated_video():
@@ -1482,24 +1612,18 @@ def generated_video():
     ):
 
         return jsonify({
-
-            "error":
-            "No video generated yet"
-
+            "error": "No generated video found."
         }), 404
 
-
     return send_file(
-
         "generated.mp4",
-
         mimetype="video/mp4"
     )
 
 
-# =========================
+# =========================================================
 # RECHARGE
-# =========================
+# =========================================================
 
 @app.route(
     "/recharge",
@@ -1509,43 +1633,16 @@ def generated_video():
 def recharge():
 
     return jsonify({
-
-        "error":
-        "Recharge payment system "
-        "is not connected yet."
-
+        "error": (
+            "Recharge is currently unavailable. "
+            "Payment system is not connected yet."
+        )
     }), 403
 
 
-# =========================
-# ERROR HANDLERS
-# =========================
-
-@app.errorhandler(404)
-def not_found(error):
-
-    return jsonify({
-
-        "error":
-        "Route not found"
-
-    }), 404
-
-
-@app.errorhandler(500)
-def server_error(error):
-
-    return jsonify({
-
-        "error":
-        "Internal server error"
-
-    }), 500
-
-
-# =========================
-# START SERVER
-# =========================
+# =========================================================
+# START APP
+# =========================================================
 
 if __name__ == "__main__":
 
@@ -1557,10 +1654,7 @@ if __name__ == "__main__":
     )
 
     app.run(
-
         host="0.0.0.0",
-
         port=port,
-
-        debug=False
+        debug=True
     )
