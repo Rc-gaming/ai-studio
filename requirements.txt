@@ -1,6 +1,5 @@
 Flask
 gunicorn
-huggingface_hub
-gradio_client
-Pillow
 Werkzeug
+requests
+psycopg2-binary
