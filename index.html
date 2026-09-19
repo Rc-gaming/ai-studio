@@ -2,681 +2,2097 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>My AI Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>My AI Studio - AI Image, Video & Audio</title>
+
+<meta name="description" content="My AI Studio - Create AI images, videos and audio in one powerful AI studio.">
+
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#08111f;color:#f5f7fb}
-button,input,textarea{font:inherit}
-button{border:0;cursor:pointer;font-weight:bold;border-radius:10px;padding:11px 17px}
-.hidden{display:none!important}
-.card{background:#101a2b;border:1px solid #263650;border-radius:18px;box-shadow:0 15px 40px #0004}
-.login-wrap{width:92%;max-width:440px;margin:70px auto}
-.login-card{padding:32px}
-.login-card h1{text-align:center}
-.subtitle{text-align:center;color:#9caac0;margin-bottom:25px}
-input,textarea{width:100%;background:#091321;color:white;border:1px solid #2b3b57;border-radius:11px;padding:13px;margin:7px 0;outline:none}
-textarea{min-height:145px;resize:vertical}
-.primary{background:#2785ff;color:white}
-.secondary{background:#263650;color:white}
-.danger{background:#d94343;color:white}
-.message{text-align:center;min-height:22px;margin:15px 0}
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:235px;background:#0c1728;border-right:1px solid #24334d;padding:22px 15px}
-.brand{font-size:21px;font-weight:800;padding:5px 10px 28px}
-.nav{display:flex;flex-direction:column;gap:7px}
-.nav button{background:transparent;color:#aebbd0;text-align:left;width:100%}
-.nav button:hover,.nav button.active{background:#1b2b45;color:white}
-.sidebar-bottom{position:absolute;left:15px;right:15px;bottom:18px}
-.main{margin-left:235px;min-height:100vh;padding:28px}
-.content{max-width:1100px;margin:auto}
-.topbar{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:25px}
-.welcome small{color:#8291a9}
-.welcome h2{margin:5px 0}
-.top-actions{display:flex;align-items:center;gap:10px}
-.credit-pill{background:#172740;border:1px solid #33445f;border-radius:22px;padding:10px 16px;font-weight:bold}
-.page{display:none}
-.page.active{display:block}
-.hero{padding:30px;margin-bottom:18px}
-.hero h1{margin:0 0 10px}
-.hero p{color:#9eabc1;line-height:1.6}
-.tools-grid,.recharge-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.tool-card{padding:23px;cursor:pointer;transition:.2s}
-.tool-card:hover{transform:translateY(-3px);border-color:#3d78c6}
-.tool-icon{font-size:34px}
-.tool-card p,.package p{color:#9eabc1;line-height:1.5;font-size:14px}
-.generator,.profile{padding:25px}
-.cost{color:#8e9db5;font-size:13px;margin-bottom:15px}
-.actions{text-align:right;margin-top:10px}
-.output{margin-top:25px;text-align:center}
-.output img,.output video{max-width:100%;max-height:600px;border-radius:14px}
-.output audio{width:100%;margin-top:10px}
-.download{background:#159b78;color:white;margin-top:10px}
-.recharge-grid{margin-top:20px}
-.package{padding:25px;text-align:center}
-.package h2{font-size:28px}
-.info{display:flex;justify-content:space-between;padding:17px 0;border-bottom:1px solid #263650}
-@media(max-width:760px){
-.sidebar{width:70px;padding:15px 8px}
-.brand{font-size:0;text-align:center}
-.brand:first-letter{font-size:25px}
-.nav button{font-size:0;text-align:center;padding:13px 5px}
-.nav button:first-letter{font-size:21px}
-.sidebar-bottom button{font-size:0;width:100%}
-.sidebar-bottom button:first-letter{font-size:20px}
-.main{margin-left:70px;padding:17px}
-.tools-grid,.recharge-grid{grid-template-columns:1fr}
-.topbar{align-items:flex-start}
-.top-actions{flex-direction:column}
+
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
 }
+
+body{
+    font-family:Arial,Helvetica,sans-serif;
+    background:#07111f;
+    color:white;
+    min-height:100vh;
+}
+
+button,input,textarea{
+    font:inherit;
+}
+
+button{
+    cursor:pointer;
+}
+
+.hidden{
+    display:none !important;
+}
+
+/* LOGIN */
+
+#loginPage{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    background:radial-gradient(circle at top,#12355a,#07111f 55%);
+}
+
+.login-box{
+    width:100%;
+    max-width:430px;
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:20px;
+    padding:35px;
+    box-shadow:0 20px 60px #0008;
+}
+
+.logo{
+    font-size:28px;
+    font-weight:bold;
+    margin-bottom:8px;
+}
+
+.subtitle{
+    color:#91a4bb;
+    margin-bottom:28px;
+}
+
+.field{
+    margin-bottom:16px;
+}
+
+.field label{
+    display:block;
+    margin-bottom:7px;
+    color:#b8c8d9;
+}
+
+.field input,
+.field textarea{
+    width:100%;
+    padding:13px;
+    border-radius:10px;
+    border:1px solid #294662;
+    background:#081525;
+    color:white;
+    outline:none;
+}
+
+.field textarea{
+    min-height:130px;
+    resize:vertical;
+}
+
+.primary{
+    width:100%;
+    padding:13px;
+    border:0;
+    border-radius:10px;
+    background:#25c7f5;
+    color:#00131d;
+    font-weight:bold;
+}
+
+.secondary{
+    width:100%;
+    padding:13px;
+    border:1px solid #294662;
+    border-radius:10px;
+    background:#14263b;
+    color:white;
+    margin-top:10px;
+}
+
+.message{
+    margin-top:15px;
+    color:#ff9e9e;
+    text-align:center;
+}
+
+/* APP */
+
+#app{
+    min-height:100vh;
+    display:flex;
+}
+
+.sidebar{
+    width:235px;
+    background:#091625;
+    border-right:1px solid #1d334b;
+    padding:20px 14px;
+    position:fixed;
+    left:0;
+    top:0;
+    bottom:0;
+}
+
+.brand{
+    font-size:21px;
+    font-weight:bold;
+    padding:12px;
+    margin-bottom:20px;
+}
+
+.nav button{
+    width:100%;
+    text-align:left;
+    background:transparent;
+    border:0;
+    color:#9fb2c8;
+    padding:13px;
+    border-radius:9px;
+    margin-bottom:5px;
+}
+
+.nav button:hover{
+    background:#142c45;
+    color:white;
+}
+
+.logout{
+    position:absolute;
+    bottom:20px;
+    left:14px;
+    right:14px;
+    background:#57282d !important;
+    color:#ffb1b1 !important;
+}
+
+.main{
+    margin-left:235px;
+    width:calc(100% - 235px);
+    padding:25px;
+}
+
+.topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:15px;
+    margin-bottom:25px;
+}
+
+.welcome{
+    color:#91a4bb;
+    font-size:14px;
+}
+
+.username{
+    font-size:25px;
+    font-weight:bold;
+}
+
+.credit{
+    background:#132c42;
+    border:1px solid #28516f;
+    padding:10px 16px;
+    border-radius:30px;
+}
+
+.page{
+    display:none;
+}
+
+.page.active{
+    display:block;
+}
+
+.hero{
+    background:linear-gradient(135deg,#102a43,#0c1c2e);
+    border:1px solid #23415e;
+    border-radius:18px;
+    padding:25px;
+    margin-bottom:20px;
+}
+
+.hero h1{
+    font-size:30px;
+    margin-bottom:10px;
+}
+
+.hero p{
+    color:#9db0c4;
+}
+
+.tools{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+}
+
+.tool-card{
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:16px;
+    padding:22px;
+}
+
+.tool-card h3{
+    margin-bottom:8px;
+}
+
+.tool-card p{
+    color:#91a4bb;
+    margin-bottom:18px;
+}
+
+.open-btn{
+    width:100%;
+    padding:11px;
+    border:0;
+    border-radius:9px;
+    background:#25c7f5;
+    font-weight:bold;
+}
+
+.generator{
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:18px;
+    padding:22px;
+}
+
+.generator h2{
+    margin-bottom:8px;
+}
+
+.generator .desc{
+    color:#91a4bb;
+    margin-bottom:20px;
+}
+
+.generate-btn{
+    margin-top:12px;
+    padding:12px 22px;
+    border:0;
+    border-radius:10px;
+    background:#25c7f5;
+    font-weight:bold;
+}
+
+.output{
+    margin-top:25px;
+}
+
+.output img,
+.output video{
+    max-width:100%;
+    width:100%;
+    border-radius:12px;
+    background:#02070d;
+}
+
+.output audio{
+    width:100%;
+}
+
+.loading{
+    color:#7edcff;
+    padding:15px 0;
+}
+
+.error{
+    color:#ff9090;
+    padding:15px 0;
+}
+
+/* RECHARGE */
+
+.packages{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+}
+
+.package{
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:15px;
+    padding:25px;
+    text-align:center;
+}
+
+.package h3{
+    margin-bottom:12px;
+}
+
+.package .amount{
+    font-size:27px;
+    font-weight:bold;
+    margin-bottom:10px;
+}
+
+.package p{
+    color:#91a4bb;
+    margin-bottom:15px;
+}
+
+.disabled-btn{
+    width:100%;
+    padding:11px;
+    border:0;
+    border-radius:9px;
+    background:#365064;
+    color:#aebdca;
+}
+
+/* ADMIN */
+
+.stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:15px;
+    margin-bottom:20px;
+}
+
+.stat{
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:14px;
+    padding:20px;
+}
+
+.stat span{
+    display:block;
+    color:#91a4bb;
+    margin-bottom:8px;
+}
+
+.stat strong{
+    font-size:26px;
+}
+
+.admin-section{
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:16px;
+    padding:20px;
+    margin-bottom:20px;
+}
+
+.admin-section h3{
+    margin-bottom:15px;
+}
+
+.admin-form{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+.admin-form input{
+    flex:1;
+    min-width:150px;
+    padding:11px;
+    border-radius:8px;
+    border:1px solid #294662;
+    background:#081525;
+    color:white;
+}
+
+.admin-form button{
+    padding:11px 18px;
+    border:0;
+    border-radius:8px;
+    background:#25c7f5;
+    font-weight:bold;
+}
+
+.table-wrap{
+    overflow:auto;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th,td{
+    padding:11px;
+    border-bottom:1px solid #203449;
+    text-align:left;
+    white-space:nowrap;
+}
+
+th{
+    color:#8fa5bb;
+}
+
+.small-btn{
+    padding:7px 10px;
+    border:0;
+    border-radius:7px;
+    background:#31516a;
+    color:white;
+}
+
+.danger{
+    background:#71383d;
+}
+
+.badge{
+    padding:5px 8px;
+    border-radius:15px;
+    background:#183b4c;
+    font-size:12px;
+}
+
+.blocked{
+    background:#5d3035;
+}
+
+/* PROFILE */
+
+.profile-box{
+    max-width:600px;
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:18px;
+    padding:25px;
+}
+
+.profile-row{
+    display:flex;
+    justify-content:space-between;
+    border-bottom:1px solid #203449;
+    padding:15px 0;
+}
+
+.profile-row span{
+    color:#91a4bb;
+}
+
+/* MOBILE */
+
+@media(max-width:900px){
+
+    .sidebar{
+        width:190px;
+    }
+
+    .main{
+        margin-left:190px;
+        width:calc(100% - 190px);
+    }
+
+    .tools,
+    .packages{
+        grid-template-columns:1fr;
+    }
+
+    .stats{
+        grid-template-columns:repeat(2,1fr);
+    }
+}
+
+@media(max-width:650px){
+
+    .sidebar{
+        position:relative;
+        width:100%;
+        height:auto;
+    }
+
+    #app{
+        display:block;
+    }
+
+    .logout{
+        position:static;
+        margin-top:10px;
+    }
+
+    .main{
+        margin-left:0;
+        width:100%;
+        padding:15px;
+    }
+
+    .stats{
+        grid-template-columns:1fr;
+    }
+
+    .topbar{
+        align-items:flex-start;
+        flex-direction:column;
+    }
+}
+
 </style>
 </head>
+
 <body>
 
-<div id="loginPage" class="login-wrap">
-<div class="card login-card">
-<h1>🤖 My AI Studio</h1>
-<div class="subtitle">Create amazing AI content in one place</div>
-<input id="username" type="text" placeholder="Username">
-<input id="password" type="password" placeholder="Password">
-<div style="text-align:center;margin-top:12px">
-<button class="primary" onclick="login()">🔐 Login</button>
-<button class="secondary" onclick="register()">📄 Register</button>
-</div>
-<div id="loginMessage" class="message"></div>
-</div>
-</div>
+<!-- LOGIN -->
 
-<div id="studioPage" class="app hidden">
-<aside class="sidebar">
-<div class="brand">🤖 My AI Studio</div>
-<div class="nav">
-<button class="active" onclick="showPage('dashboard',this)">🏠 Dashboard</button>
-<button onclick="showPage('image',this)">🖼️ Image</button>
-<button onclick="showPage('video',this)">🎬 Video</button>
-<button onclick="showPage('audio',this)">🔊 Audio</button>
-<button onclick="showPage('recharge',this)">💳 Recharge</button>
-<button onclick="showPage('profile',this)">👤 Profile</button>
-</div>
-<div class="sidebar-bottom"><button class="danger" onclick="logout()">🚪 Logout</button></div>
-</aside>
+<div id="loginPage">
 
-<main class="main"><div class="content">
-<div class="topbar">
-<div class="welcome">
-<small>Welcome back</small>
-<h2>👋 <span id="currentUser"></span></h2>
-</div>
-<div class="top-actions">
-<div class="credit-pill">🪙 <span id="credits">0</span> Credits</div>
-<button class="primary" onclick="showPage('recharge')">💳 Recharge</button>
-</div>
-</div>
+    <div class="login-box">
 
-<section id="dashboard" class="page active">
-<div class="card hero">
-<h1>AI Studio Dashboard</h1>
-<p>Generate images, videos and AI voice from one simple workspace.</p>
-</div>
+        <div class="logo">🤖 My AI Studio</div>
 
-<div class="tools-grid">
-<div class="card tool-card" onclick="openTool('image')">
-<div class="tool-icon">🖼️</div>
-<h3>AI Image</h3>
-<p>Create images from your text prompt.</p>
-<b>5 credits / generation</b>
-</div>
+        <div class="subtitle">
+            AI Image • Video • Audio Studio
+        </div>
 
-<div class="card tool-card" onclick="openTool('video')">
-<div class="tool-icon">🎬</div>
-<h3>AI Video</h3>
-<p>Generate AI videos from your ideas.</p>
-<b>21 credits / generation</b>
-</div>
+        <div class="field">
+            <label>Username</label>
 
-<div class="card tool-card" onclick="openTool('audio')">
-<div class="tool-icon">🔊</div>
-<h3>AI Audio</h3>
-<p>Turn your text into AI voice.</p>
-<b>8 credits / generation</b>
-</div>
-</div>
-</section>
+            <input
+                id="loginUsername"
+                type="text"
+                placeholder="Enter username">
+        </div>
 
-<section id="image" class="page">
-<div class="card generator">
-<h2>🖼️ AI Image Generator</h2>
-<div class="cost">Cost: 5 credits</div>
-<textarea id="imagePrompt" placeholder="Describe the image you want..."></textarea>
-<div class="actions">
-<button class="primary" onclick="generateTool('image')">✨ Generate Image</button>
-</div>
-<div id="imageStatus" class="message"></div>
-<div id="imageOutput" class="output"></div>
-</div>
-</section>
+        <div class="field">
+            <label>Password</label>
 
-<section id="video" class="page">
-<div class="card generator">
-<h2>🎬 AI Video Generator</h2>
-<div class="cost">Cost: 21 credits</div>
-<textarea id="videoPrompt" placeholder="Describe the video you want..."></textarea>
-<div class="actions">
-<button class="primary" onclick="generateTool('video')">✨ Generate Video</button>
-</div>
-<div id="videoStatus" class="message"></div>
-<div id="videoOutput" class="output"></div>
-</div>
-</section>
-<section id="audio" class="page">
-<div class="card generator">
-<h2>🔊 AI Audio Generator</h2>
-<div class="cost">Cost: 8 credits</div>
-<textarea id="audioPrompt" placeholder="Enter text for AI voice..."></textarea>
-<div class="actions">
-<button class="primary" onclick="generateTool('audio')">✨ Generate Audio</button>
-</div>
-<div id="audioStatus" class="message"></div>
-<div id="audioOutput" class="output"></div>
-</div>
-</section>
+            <input
+                id="loginPassword"
+                type="password"
+                placeholder="Enter password">
+        </div>
 
-<section id="recharge" class="page">
-<div class="card generator">
-<h2>💳 Recharge Credits</h2>
-<p style="color:#9eabc1">Recharge system will be connected to payment later.</p>
+        <button
+            class="primary"
+            onclick="login()">
+            Login
+        </button>
 
-<div class="recharge-grid">
+        <button
+            class="secondary"
+            onclick="register()">
+            Create Account
+        </button>
 
-<div class="card package">
-<h3>⚡ Starter</h3>
-<h2>100 Credits</h2>
-<p>For testing</p>
-<button class="primary" onclick="recharge(100)">Add 100</button>
-</div>
+        <div
+            id="loginMessage"
+            class="message">
+        </div>
 
-<div class="card package">
-<h3>🚀 Creator</h3>
-<h2>500 Credits</h2>
-<p>Regular use</p>
-<button class="primary" onclick="recharge(500)">Add 500</button>
-</div>
-
-<div class="card package">
-<h3>🔥 Pro</h3>
-<h2>1000 Credits</h2>
-<p>Heavy use</p>
-<button class="primary" onclick="recharge(1000)">Add 1000</button>
-</div>
+    </div>
 
 </div>
 
-<div id="rechargeStatus" class="message"></div>
-</div>
-</section>
+<!-- APP -->
 
-<section id="profile" class="page">
-<div class="card profile">
-<h2>👤 Profile</h2>
+<div id="app" class="hidden">
 
-<div class="info">
-<span>Username</span>
-<b id="profileUser"></b>
-</div>
+    <aside class="sidebar">
 
-<div class="info">
-<span>Available Credits</span>
-<b>🪙 <span id="profileCredits">0</span></b>
-</div>
+        <div class="brand">
+            🤖 My AI Studio
+        </div>
 
-<div class="info">
-<span>Image Cost</span>
-<b>5 Credits</b>
-</div>
+        <div class="nav">
 
-<div class="info">
-<span>Audio Cost</span>
-<b>8 Credits</b>
-</div>
+            <button onclick="showPage('dashboard')">
+                🏠 Dashboard
+            </button>
 
-<div class="info">
-<span>Video Cost</span>
-<b>21 Credits</b>
-</div>
+            <button onclick="showPage('image')">
+                🖼️ Image
+            </button>
 
-</div>
-</section>
+            <button onclick="showPage('video')">
+                🎬 Video
+            </button>
 
-</div>
-</main>
+            <button onclick="showPage('audio')">
+                🔊 Audio
+            </button>
+
+            <button onclick="showPage('recharge')">
+                💳 Recharge
+            </button>
+
+            <button onclick="showPage('profile')">
+                👤 Profile
+            </button>
+
+            <button
+                id="adminNav"
+                class="hidden"
+                onclick="showPage('admin')">
+                🛠️ Admin Panel
+            </button>
+
+        </div>
+
+        <button
+            class="nav logout"
+            onclick="logout()">
+            🚪 Logout
+        </button>
+
+    </aside>
+
+    <main class="main">
+
+        <div class="topbar">
+
+            <div>
+
+                <div class="welcome">
+                    Welcome back
+                </div>
+
+                <div
+                    id="topUsername"
+                    class="username">
+                    User
+                </div>
+
+            </div>
+
+            <div class="credit">
+                💰
+                <span id="creditCount">0</span>
+                Credits
+            </div>
+
+        </div>
+
+        <!-- DASHBOARD -->
+
+        <section
+            id="dashboard"
+            class="page active">
+
+            <div class="hero">
+
+                <h1>
+                    Create with AI 🚀
+                </h1>
+
+                <p>
+                    Generate images, videos and audio
+                    from one simple AI studio.
+                </p>
+
+            </div>
+
+            <div class="tools">
+
+                <div class="tool-card">
+
+                    <h3>🖼️ AI Image</h3>
+
+                    <p>
+                        Turn your text prompt into an AI image.
+                    </p>
+
+                    <button
+                        class="open-btn"
+                        onclick="showPage('image')">
+                        Create Image
+                    </button>
+
+                </div>
+
+                <div class="tool-card">
+
+                    <h3>🎬 AI Video</h3>
+
+                    <p>
+                        Generate short AI videos from text.
+                    </p>
+
+                    <button
+                        class="open-btn"
+                        onclick="showPage('video')">
+                        Create Video
+                    </button>
+
+                </div>
+
+                <div class="tool-card">
+
+                    <h3>🔊 AI Audio</h3>
+
+                    <p>
+                        Convert your text into AI voice.
+                    </p>
+
+                    <button
+                        class="open-btn"
+                        onclick="showPage('audio')">
+                        Create Audio
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- IMAGE -->
+
+        <section
+            id="image"
+            class="page">
+
+            <div class="generator">
+
+                <h2>🖼️ AI Image Generator</h2>
+
+                <div class="desc">
+                    Cost: 5 credits
+                </div>
+
+                <div class="field">
+
+                    <textarea
+                        id="imagePrompt"
+                        placeholder="Example: A futuristic city at sunset, cinematic lighting..."></textarea>
+
+                </div>
+
+                <button
+                    class="generate-btn"
+                    onclick="generateImage()">
+                    Generate Image
+                </button>
+
+                <div
+                    id="imageOutput"
+                    class="output">
+                </div>
+
+            </div>
+
+        </section>
+        <!-- VIDEO -->
+
+        <section
+            id="video"
+            class="page">
+
+            <div class="generator">
+
+                <h2>🎬 AI Video Generator</h2>
+
+                <div class="desc">
+                    Cost: 21 credits • 4 second video
+                </div>
+
+                <div class="field">
+
+                    <textarea
+                        id="videoPrompt"
+                        placeholder="Example: A cinematic drone shot flying over mountains..."></textarea>
+
+                </div>
+
+                <button
+                    class="generate-btn"
+                    onclick="generateVideo()">
+                    Generate Video
+                </button>
+
+                <div
+                    id="videoOutput"
+                    class="output">
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- AUDIO -->
+
+        <section
+            id="audio"
+            class="page">
+
+            <div class="generator">
+
+                <h2>🔊 AI Audio Generator</h2>
+
+                <div class="desc">
+                    Cost: 8 credits
+                </div>
+
+                <div class="field">
+
+                    <textarea
+                        id="audioText"
+                        placeholder="Type the text you want the AI voice to speak..."></textarea>
+
+                </div>
+
+                <button
+                    class="generate-btn"
+                    onclick="generateAudio()">
+                    Generate Audio
+                </button>
+
+                <div
+                    id="audioOutput"
+                    class="output">
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- RECHARGE -->
+
+        <section
+            id="recharge"
+            class="page">
+
+            <div class="generator">
+
+                <h2>💳 Recharge Credits</h2>
+
+                <div class="desc">
+                    Payment system will be connected later.
+                </div>
+
+                <div class="packages">
+
+                    <div class="package">
+
+                        <h3>⚡ Starter</h3>
+
+                        <div class="amount">
+                            100 Credits
+                        </div>
+
+                        <p>For testing</p>
+
+                        <button class="disabled-btn">
+                            Coming Soon
+                        </button>
+
+                    </div>
+
+                    <div class="package">
+
+                        <h3>🛰️ Creator</h3>
+
+                        <div class="amount">
+                            500 Credits
+                        </div>
+
+                        <p>Regular use</p>
+
+                        <button class="disabled-btn">
+                            Coming Soon
+                        </button>
+
+                    </div>
+
+                    <div class="package">
+
+                        <h3>🔥 Pro</h3>
+
+                        <div class="amount">
+                            1000 Credits
+                        </div>
+
+                        <p>Heavy use</p>
+
+                        <button class="disabled-btn">
+                            Coming Soon
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- PROFILE -->
+
+        <section
+            id="profile"
+            class="page">
+
+            <div class="profile-box">
+
+                <h2>👤 Profile</h2>
+
+                <div class="profile-row">
+
+                    <span>Username</span>
+
+                    <strong id="profileUsername">
+                        -
+                    </strong>
+
+                </div>
+
+                <div class="profile-row">
+
+                    <span>Credits</span>
+
+                    <strong id="profileCredits">
+                        -
+                    </strong>
+
+                </div>
+
+                <div class="profile-row">
+
+                    <span>Account Type</span>
+
+                    <strong id="profileType">
+                        User
+                    </strong>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ADMIN -->
+
+        <section
+            id="admin"
+            class="page">
+
+            <div class="hero">
+
+                <h1>
+                    🛠️ Admin Panel
+                </h1>
+
+                <p>
+                    Manage users, credits and activity.
+                </p>
+
+            </div>
+
+            <!-- STATS -->
+
+            <div class="stats">
+
+                <div class="stat">
+
+                    <span>Total Users</span>
+
+                    <strong id="statUsers">
+                        0
+                    </strong>
+
+                </div>
+
+                <div class="stat">
+
+                    <span>Total Generations</span>
+
+                    <strong id="statGenerations">
+                        0
+                    </strong>
+
+                </div>
+
+                <div class="stat">
+
+                    <span>Total Credits</span>
+
+                    <strong id="statCredits">
+                        0
+                    </strong>
+
+                </div>
+
+                <div class="stat">
+
+                    <span>Blocked Users</span>
+
+                    <strong id="statBlocked">
+                        0
+                    </strong>
+
+                </div>
+
+            </div>
+
+            <!-- CREDIT CONTROL -->
+
+            <div class="admin-section">
+
+                <h3>
+                    💰 Add / Remove Credits
+                </h3>
+
+                <div class="admin-form">
+
+                    <input
+                        id="creditUsername"
+                        placeholder="Username">
+
+                    <input
+                        id="creditAmount"
+                        type="number"
+                        placeholder="+100 or -50">
+
+                    <button
+                        onclick="adjustCredits()">
+                        Apply
+                    </button>
+
+                </div>
+
+            </div>
+
+            <!-- USERS -->
+
+            <div class="admin-section">
+
+                <h3>👥 Users</h3>
+
+                <div class="table-wrap">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Credits</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Action</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody id="usersTable">
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+            <!-- GENERATION HISTORY -->
+
+            <div class="admin-section">
+
+                <h3>
+                    📝 Generation History
+                </h3>
+
+                <div class="table-wrap">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>User</th>
+                                <th>Type</th>
+                                <th>Prompt</th>
+                                <th>Credits</th>
+                                <th>Date</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody id="generationTable">
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+            <!-- CREDIT HISTORY -->
+
+            <div class="admin-section">
+
+                <h3>
+                    💳 Credit History
+                </h3>
+
+                <div class="table-wrap">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>User</th>
+                                <th>Amount</th>
+                                <th>Reason</th>
+                                <th>Date</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody id="creditHistoryTable">
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
 </div>
 
 <script>
-const costs={
-image:5,
-audio:8,
-video:21
-};
 
-function showPage(id,button){
+/* =====================================================
+GLOBAL
+===================================================== */
 
-document.querySelectorAll(".page").forEach(function(p){
-p.classList.remove("active");
-});
+let currentUser = null;
 
-const page=document.getElementById(id);
 
-if(page){
-page.classList.add("active");
+/* =====================================================
+API
+===================================================== */
+
+async function api(url, options = {}){
+
+    const response = await fetch(
+        url,
+        {
+            credentials:"same-origin",
+            ...options,
+            headers:{
+                "Content-Type":"application/json",
+                ...(options.headers || {})
+            }
+        }
+    );
+
+    const data = await response.json();
+
+    if(!response.ok){
+
+        throw new Error(
+            data.error || "Something went wrong"
+        );
+
+    }
+
+    return data;
 }
 
-document.querySelectorAll(".nav button").forEach(function(b){
-b.classList.remove("active");
-});
 
-if(button){
-button.classList.add("active");
-}
-
-}
-
-function openTool(mode){
-showPage(mode);
-}
-
-async function loadCredits(){
-
-try{
-
-const r=await fetch("/credits");
-const d=await r.json();
-
-if(r.ok){
-
-document.getElementById("credits").textContent=d.credits;
-
-document.getElementById("profileCredits").textContent=d.credits;
-
-}
-
-}catch(e){
-
-console.error(e);
-
-}
-
-}
+/* =====================================================
+LOGIN
+===================================================== */
 
 async function login(){
 
-const username=document.getElementById("username").value.trim();
+    const username =
+        document
+            .getElementById("loginUsername")
+            .value
+            .trim();
 
-const password=document.getElementById("password").value;
+    const password =
+        document
+            .getElementById("loginPassword")
+            .value;
 
-const msg=document.getElementById("loginMessage");
+    const message =
+        document
+            .getElementById("loginMessage");
 
-if(!username||!password){
+    if(!username || !password){
 
-msg.textContent="❌ Username aur password bharo.";
+        message.textContent =
+            "Please enter username and password.";
 
-return;
+        return;
+    }
 
+    try{
+
+        const data = await api(
+            "/login",
+            {
+                method:"POST",
+                body:JSON.stringify({
+                    username:username,
+                    password:password
+                })
+            }
+        );
+
+        currentUser = data;
+
+        await enterStudio();
+
+    }catch(error){
+
+        message.textContent =
+            error.message;
+
+    }
 }
 
-msg.textContent="⏳ Logging in...";
 
-try{
-
-const r=await fetch("/login",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-username:username,
-password:password
-})
-
-});
-
-const d=await r.json();
-
-if(!r.ok){
-
-msg.textContent="❌ "+(d.error||"Login failed");
-
-return;
-
-}
-
-enterStudio(d.username||username);
-
-}catch(e){
-
-msg.textContent="❌ Server se connection nahi ho raha.";
-
-}
-
-}
+/* =====================================================
+REGISTER
+===================================================== */
 
 async function register(){
 
-const username=document.getElementById("username").value.trim();
+    const username =
+        document
+            .getElementById("loginUsername")
+            .value
+            .trim();
 
-const password=document.getElementById("password").value;
+    const password =
+        document
+            .getElementById("loginPassword")
+            .value;
 
-const msg=document.getElementById("loginMessage");
+    const message =
+        document
+            .getElementById("loginMessage");
 
-if(!username||!password){
+    if(!username || !password){
 
-msg.textContent="❌ Username aur password bharo.";
+        message.textContent =
+            "Enter username and password first.";
 
-return;
+        return;
+    }
+
+    try{
+
+        await api(
+            "/register",
+            {
+                method:"POST",
+                body:JSON.stringify({
+                    username:username,
+                    password:password
+                })
+            }
+        );
+
+        message.style.color =
+            "#80e5a5";
+
+        message.textContent =
+            "Account created. Now login.";
+
+    }catch(error){
+
+        message.style.color =
+            "#ff9090";
+
+        message.textContent =
+            error.message;
+
+    }
+}
+
+
+/* =====================================================
+ENTER STUDIO
+===================================================== */
+
+async function enterStudio(){
+
+    document
+        .getElementById("loginPage")
+        .classList
+        .add("hidden");
+
+    document
+        .getElementById("app")
+        .classList
+        .remove("hidden");
+
+    await loadMe();
+
+    showPage("dashboard");
+}
+
+
+/* =====================================================
+LOAD USER
+===================================================== */
+
+async function loadMe(){
+
+    try{
+
+        const data =
+            await api("/me");
+
+        if(!data.logged_in){
+
+            await logout(false);
+
+            return;
+        }
+
+        currentUser = data;
+
+        document
+            .getElementById("topUsername")
+            .textContent =
+            "👋 " + data.username;
+
+        document
+            .getElementById("creditCount")
+            .textContent =
+            data.credits;
+
+        document
+            .getElementById("profileUsername")
+            .textContent =
+            data.username;
+
+        document
+            .getElementById("profileCredits")
+            .textContent =
+            data.credits;
+
+        document
+            .getElementById("profileType")
+            .textContent =
+            data.is_admin
+                ? "Admin"
+                : "User";
+
+        const adminNav =
+            document.getElementById("adminNav");
+
+        if(data.is_admin){
+
+            adminNav
+                .classList
+                .remove("hidden");
+
+        }else{
+
+            adminNav
+                .classList
+                .add("hidden");
+
+        }
+
+    }catch(error){
+
+        console.error(error);
+
+    }
+}
+
+
+/* =====================================================
+SHOW PAGE
+===================================================== */
+
+function showPage(page){
+
+    document
+        .querySelectorAll(".page")
+        .forEach(function(element){
+
+            element
+                .classList
+                .remove("active");
+
+        });
+
+    const selected =
+        document.getElementById(page);
+
+    if(selected){
+
+        selected
+            .classList
+            .add("active");
+
+    }
+
+    if(page === "admin"){
+
+        loadAdmin();
+
+    }
+}
+
+
+/* =====================================================
+REFRESH CREDITS
+===================================================== */
+
+async function refreshCredits(){
+
+    try{
+
+        const data =
+            await api("/credits");
+
+        document
+            .getElementById("creditCount")
+            .textContent =
+            data.credits;
+
+        document
+            .getElementById("profileCredits")
+            .textContent =
+            data.credits;
+
+    }catch(error){
+
+        console.error(error);
+
+    }
+}
+
+
+/* =====================================================
+IMAGE
+===================================================== */
+
+async function generateImage(){
+
+    const prompt =
+        document
+            .getElementById("imagePrompt")
+            .value
+            .trim();
+
+    const output =
+        document
+            .getElementById("imageOutput");
+
+    if(!prompt){
+
+        output.innerHTML =
+            '<div class="error">Please enter a prompt.</div>';
+
+        return;
+    }
+
+    output.innerHTML =
+        '<div class="loading">Generating image... Please wait.</div>';
+
+    try{
+
+        const data =
+            await api(
+                "/generate",
+                {
+                    method:"POST",
+                    body:JSON.stringify({
+                        prompt:prompt
+                    })
+                }
+            );
+
+        output.innerHTML =
+            '<img src="' +
+            data.image_url +
+            '" alt="Generated AI Image">' +
+            '<br><br>' +
+            '<a href="' +
+            data.image_url +
+            '" target="_blank" style="color:#6edcff">' +
+            'Open Image' +
+            '</a>';
+
+        document
+            .getElementById("creditCount")
+            .textContent =
+            data.credits;
+
+    }catch(error){
+
+        output.innerHTML =
+            '<div class="error">' +
+            escapeHtml(error.message) +
+            '</div>';
+
+    }
+}
+
+
+/* =====================================================
+VIDEO
+===================================================== */
+
+async function generateVideo(){
+
+    const prompt =
+        document
+            .getElementById("videoPrompt")
+            .value
+            .trim();
+
+    const output =
+        document
+            .getElementById("videoOutput");
+
+    if(!prompt){
+
+        output.innerHTML =
+            '<div class="error">Please enter a prompt.</div>';
+
+        return;
+    }
+
+    output.innerHTML =
+        '<div class="loading">' +
+        'Generating video... This can take a few minutes.' +
+        '</div>';
+
+    try{
+
+        const data =
+            await api(
+                "/video",
+                {
+                    method:"POST",
+                    body:JSON.stringify({
+                        prompt:prompt
+                    })
+                }
+            );
+
+        output.innerHTML =
+            '<video controls playsinline src="' +
+            data.video_url +
+            '"></video>' +
+            '<br><br>' +
+            '<a href="' +
+            data.video_url +
+            '" target="_blank" style="color:#6edcff">' +
+            'Open Video' +
+            '</a>';
+
+        document
+            .getElementById("creditCount")
+            .textContent =
+            data.credits;
+
+    }catch(error){
+
+        output.innerHTML =
+            '<div class="error">' +
+            escapeHtml(error.message) +
+            '</div>';
+
+    }
+}
+
+
+/* =====================================================
+AUDIO
+===================================================== */
+
+async function generateAudio(){
+
+    const text =
+        document
+            .getElementById("audioText")
+            .value
+            .trim();
+
+    const output =
+        document
+            .getElementById("audioOutput");
+
+    if(!text){
+
+        output.innerHTML =
+            '<div class="error">Please enter text.</div>';
+
+        return;
+    }
+
+    output.innerHTML =
+        '<div class="loading">' +
+        'Generating audio... Please wait.' +
+        '</div>';
+
+    try{
+
+        const data =
+            await api(
+                "/audio",
+                {
+                    method:"POST",
+                    body:JSON.stringify({
+                        text:text
+                    })
+                }
+            );
+
+        output.innerHTML =
+            '<audio controls src="' +
+            data.audio_url +
+            '"></audio>' +
+            '<br><br>' +
+            '<a href="' +
+            data.audio_url +
+            '" target="_blank" style="color:#6edcff">' +
+            'Open Audio' +
+            '</a>';
+
+        document
+            .getElementById("creditCount")
+            .textContent =
+            data.credits;
+
+    }catch(error){
+
+        output.innerHTML =
+            '<div class="error">' +
+            escapeHtml(error.message) +
+            '</div>';
+
+    }
+}
+/* =====================================================
+ADMIN
+===================================================== */
+
+async function loadAdmin(){
+
+    try{
+
+        const me =
+            await api("/me");
+
+        if(!me.is_admin){
+
+            alert("Admin access required.");
+
+            showPage("dashboard");
+
+            return;
+        }
+
+        await loadAdminStats();
+        await loadUsers();
+        await loadGenerations();
+        await loadCreditHistory();
+
+    }catch(error){
+
+        alert(error.message);
+
+    }
+}
+
+
+/* =====================================================
+ADMIN STATS
+===================================================== */
+
+async function loadAdminStats(){
+
+    const data =
+        await api("/admin/stats");
+
+    document
+        .getElementById("statUsers")
+        .textContent =
+        data.users;
+
+    document
+        .getElementById("statGenerations")
+        .textContent =
+        data.generations;
+
+    document
+        .getElementById("statCredits")
+        .textContent =
+        data.credits;
+
+    document
+        .getElementById("statBlocked")
+        .textContent =
+        data.blocked;
+}
+
+
+/* =====================================================
+USERS
+===================================================== */
+
+async function loadUsers(){
+
+    const data =
+        await api("/admin/users");
+
+    const table =
+        document.getElementById("usersTable");
+
+    table.innerHTML = "";
+
+    data.users.forEach(function(user){
+
+        const tr =
+            document.createElement("tr");
+
+        const type =
+            user.is_admin
+                ? '<span class="badge">ADMIN</span>'
+                : '<span class="badge">USER</span>';
+
+        const status =
+            user.is_blocked
+                ? '<span class="badge blocked">BLOCKED</span>'
+                : '<span class="badge">ACTIVE</span>';
+
+        let action = "-";
+
+        if(!user.is_admin){
+
+            action =
+                '<button class="small-btn ' +
+                (user.is_blocked ? "" : "danger") +
+                '" onclick="toggleBlock(\'' +
+                escapeJs(user.username) +
+                '\')">' +
+                (user.is_blocked ? "Unblock" : "Block") +
+                '</button>';
+
+        }
+
+        tr.innerHTML =
+            '<td>' + user.id + '</td>' +
+            '<td>' + escapeHtml(user.username) + '</td>' +
+            '<td>' + user.credits + '</td>' +
+            '<td>' + type + '</td>' +
+            '<td>' + status + '</td>' +
+            '<td>' + action + '</td>';
+
+        table.appendChild(tr);
+
+    });
+}
+
+
+/* =====================================================
+ADD / REMOVE CREDITS
+===================================================== */
+
+async function adjustCredits(){
+
+    const username =
+        document
+            .getElementById("creditUsername")
+            .value
+            .trim();
+
+    const amount =
+        Number(
+            document
+                .getElementById("creditAmount")
+                .value
+        );
+
+    if(!username || !amount){
+
+        alert(
+            "Enter username and amount."
+        );
+
+        return;
+    }
+
+    try{
+
+        await api(
+            "/admin/credits",
+            {
+                method:"POST",
+                body:JSON.stringify({
+                    username:username,
+                    amount:amount
+                })
+            }
+        );
+
+        alert("Credits updated.");
+
+        document
+            .getElementById("creditUsername")
+            .value = "";
+
+        document
+            .getElementById("creditAmount")
+            .value = "";
+
+        await loadAdmin();
+
+    }catch(error){
+
+        alert(error.message);
+
+    }
+}
+
+
+/* =====================================================
+BLOCK / UNBLOCK
+===================================================== */
+
+async function toggleBlock(username){
+
+    if(!confirm(
+        "Change block status for " +
+        username +
+        "?"
+    )){
+
+        return;
+    }
+
+    try{
+
+        await api(
+            "/admin/block",
+            {
+                method:"POST",
+                body:JSON.stringify({
+                    username:username
+                })
+            }
+        );
+
+        await loadAdmin();
+
+    }catch(error){
+
+        alert(error.message);
+
+    }
+}
+
+
+/* =====================================================
+GENERATION HISTORY
+===================================================== */
+
+async function loadGenerations(){
+
+    const data =
+        await api("/admin/generations");
+
+    const table =
+        document.getElementById("generationTable");
+
+    table.innerHTML = "";
+
+    data.history.forEach(function(item){
+
+        const tr =
+            document.createElement("tr");
+
+        tr.innerHTML =
+            '<td>' +
+            escapeHtml(item.username) +
+            '</td>' +
+
+            '<td>' +
+            escapeHtml(item.type) +
+            '</td>' +
+
+            '<td>' +
+            escapeHtml(item.prompt || "") +
+            '</td>' +
+
+            '<td>' +
+            item.credits +
+            '</td>' +
+
+            '<td>' +
+            escapeHtml(item.created_at) +
+            '</td>';
+
+        table.appendChild(tr);
+
+    });
+}
+
+
+/* =====================================================
+CREDIT HISTORY
+===================================================== */
+
+async function loadCreditHistory(){
+
+    const data =
+        await api("/admin/credit-history");
+
+    const table =
+        document.getElementById(
+            "creditHistoryTable"
+        );
+
+    table.innerHTML = "";
+
+    data.history.forEach(function(item){
+
+        const tr =
+            document.createElement("tr");
+
+        tr.innerHTML =
+            '<td>' +
+            escapeHtml(item.username) +
+            '</td>' +
+
+            '<td>' +
+            item.amount +
+            '</td>' +
+
+            '<td>' +
+            escapeHtml(item.reason || "") +
+            '</td>' +
+
+            '<td>' +
+            escapeHtml(item.created_at) +
+            '</td>';
+
+        table.appendChild(tr);
+
+    });
+}
+
+
+/* =====================================================
+LOGOUT
+===================================================== */
+
+async function logout(callServer = true){
+
+    if(callServer){
+
+        try{
+
+            await fetch(
+                "/logout",
+                {
+                    method:"POST"
+                }
+            );
+
+        }catch(error){}
+
+    }
+
+    currentUser = null;
+
+    document
+        .getElementById("app")
+        .classList
+        .add("hidden");
+
+    document
+        .getElementById("loginPage")
+        .classList
+        .remove("hidden");
+
+    document
+        .getElementById("loginUsername")
+        .value = "";
+
+    document
+        .getElementById("loginPassword")
+        .value = "";
+
+    document
+        .getElementById("loginMessage")
+        .textContent = "";
+}
+
+
+/* =====================================================
+SECURITY HELPERS
+===================================================== */
+
+function escapeHtml(value){
+
+    return String(value)
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#039;");
 
 }
 
-if(password.length<6){
 
-msg.textContent="❌ Password kam se kam 6 characters ka hona chahiye.";
+function escapeJs(value){
 
-return;
-
-}
-
-msg.textContent="⏳ Creating account...";
-
-try{
-
-const r=await fetch("/register",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-username:username,
-password:password
-})
-
-});
-
-const d=await r.json();
-
-if(!r.ok){
-
-msg.textContent="❌ "+(d.error||"Registration failed");
-
-return;
+    return String(value)
+        .replace(/\\/g,"\\\\")
+        .replace(/'/g,"\\'");
 
 }
 
-msg.textContent="✅ Account created! Ab Login karo. 100 credits mil gaye.";
 
-}catch(e){
-
-msg.textContent="❌ Server se connection nahi ho raha.";
-
-}
-
-}
-
-function enterStudio(username){
-
-document.getElementById("loginPage").classList.add("hidden");
-
-document.getElementById("studioPage").classList.remove("hidden");
-
-document.getElementById("currentUser").textContent=username;
-
-document.getElementById("profileUser").textContent=username;
-
-loadCredits();
-
-}
-
-async function logout(){
-
-try{
-
-await fetch("/logout",{
-method:"POST"
-});
-
-}catch(e){}
-
-document.getElementById("studioPage").classList.add("hidden");
-
-document.getElementById("loginPage").classList.remove("hidden");
-
-document.getElementById("loginMessage").textContent="Logged out.";
-
-}
-
-async function generateTool(mode){
-
-const prompt=document.getElementById(mode+"Prompt").value.trim();
-
-const status=document.getElementById(mode+"Status");
-
-const output=document.getElementById(mode+"Output");
-
-if(!prompt){
-
-status.textContent="❌ Prompt/text enter karo.";
-
-return;
-
-}
-
-status.textContent="⏳ Generating... Please wait.";
-
-output.innerHTML="";
-
-let url;
-
-if(mode==="image"){
-
-url="/generate";
-
-}else if(mode==="video"){
-
-url="/video";
-
-}else{
-
-url="/audio";
-
-}
-
-let body;
-
-if(mode==="audio"){
-
-body={
-text:prompt
-};
-
-}else{
-
-body={
-prompt:prompt
-};
-
-}
-
-try{
-
-const r=await fetch(url,{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify(body)
-
-});
-
-const d=await r.json();
-
-if(!r.ok){
-
-status.textContent="❌ "+(d.error||"Generation failed");
-
-loadCredits();
-
-return;
-
-}
-
-status.textContent="✅ Complete! "+costs[mode]+" credits used.";
-
-loadCredits();
-
-if(mode==="image"){
-
-output.innerHTML=
-
-`<img src="${d.image_url}?t=${Date.now()}">
-
-<br>
-
-<a href="${d.image_url}" download="generated.png">
-
-<button class="download">
-⬇️ Download Image
-</button>
-
-</a>`;
-
-}else if(mode==="video"){
-
-output.innerHTML=
-
-`<video controls>
-
-<source src="${d.video_url}?t=${Date.now()}" type="video/mp4">
-
-Your browser does not support video playback.
-
-</video>
-
-<br>
-
-<a href="${d.video_url}" download="generated.mp4">
-
-<button class="download">
-⬇️ Download Video
-</button>
-
-</a>`;
-
-}else{
-
-output.innerHTML=
-
-`<audio controls>
-
-<source src="${d.audio_url}?t=${Date.now()}" type="audio/wav">
-
-Your browser does not support audio playback.
-
-</audio>
-
-<br>
-
-<a href="${d.audio_url}" download="generated.wav">
-
-<button class="download">
-⬇️ Download Audio
-</button>
-
-</a>`;
-
-}
-
-}catch(e){
-
-console.error(e);
-
-status.textContent="❌ Something went wrong.";
-
-}
-
-}
-
-async function recharge(amount){
-
-const status=document.getElementById("rechargeStatus");
-
-status.textContent="⏳ Processing...";
-
-try{
-
-const r=await fetch("/recharge",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-amount:amount
-})
-
-});
-
-const d=await r.json();
-
-if(!r.ok){
-
-status.textContent="❌ "+(d.error||"Recharge failed");
-
-return;
-
-}
-
-status.textContent="✅ "+amount+" credits added successfully!";
-
-loadCredits();
-
-}catch(e){
-
-status.textContent="❌ Recharge failed.";
-
-}
-
-}
+/* =====================================================
+CHECK LOGIN
+===================================================== */
 
 async function checkLogin(){
 
-try{
+    try{
 
-const r=await fetch("/me");
+        const data =
+            await api("/me");
 
-const d=await r.json();
+        if(data.logged_in){
 
-if(d.logged_in){
+            currentUser = data;
 
-enterStudio(d.username);
+            await enterStudio();
 
+        }
+
+    }catch(error){
+
+        console.log(
+            "Not logged in"
+        );
+
+    }
 }
 
-}catch(e){
-
-console.error(e);
-
-}
-
-}
 
 checkLogin();
+
 </script>
+
 </body>
 </html>
