@@ -12,19 +12,24 @@
 
 *{
     box-sizing:border-box;
-    margin:0;
-    padding:0;
+}
+
+html{
+    scroll-behavior:smooth;
 }
 
 body{
+    margin:0;
     font-family:Arial,Helvetica,sans-serif;
     background:#07111f;
     color:white;
     min-height:100vh;
 }
 
-button,input,textarea{
-    font:inherit;
+button,
+input,
+textarea{
+    font-family:inherit;
 }
 
 button{
@@ -35,7 +40,9 @@ button{
     display:none !important;
 }
 
-/* LOGIN */
+/* =========================
+   LOGIN PAGE
+========================= */
 
 #loginPage{
     min-height:100vh;
@@ -43,7 +50,8 @@ button{
     align-items:center;
     justify-content:center;
     padding:20px;
-    background:radial-gradient(circle at top,#12355a,#07111f 55%);
+    background:
+        radial-gradient(circle at top,#12355a,#07111f 55%);
 }
 
 .login-box{
@@ -57,73 +65,86 @@ button{
 }
 
 .logo{
-    font-size:28px;
-    font-weight:bold;
+    text-align:center;
+    font-size:30px;
+    font-weight:800;
     margin-bottom:8px;
 }
 
-.subtitle{
-    color:#91a4bb;
-    margin-bottom:28px;
+.logo span{
+    color:#6edcff;
 }
 
-.field{
+.subtitle{
+    text-align:center;
+    color:#8da5bd;
+    margin-bottom:30px;
+}
+
+.input-group{
     margin-bottom:16px;
 }
 
-.field label{
+.input-group label{
     display:block;
+    font-size:14px;
+    color:#a9bdd1;
     margin-bottom:7px;
-    color:#b8c8d9;
 }
 
-.field input,
-.field textarea{
+.input-group input{
     width:100%;
-    padding:13px;
-    border-radius:10px;
-    border:1px solid #294662;
-    background:#081525;
+    padding:13px 14px;
+    background:#081523;
+    border:1px solid #28435f;
     color:white;
+    border-radius:10px;
     outline:none;
 }
 
-.field textarea{
-    min-height:130px;
-    resize:vertical;
+.input-group input:focus{
+    border-color:#4ecfff;
 }
 
-.primary{
-    width:100%;
+.login-actions{
+    display:flex;
+    gap:10px;
+    margin-top:20px;
+}
+
+.login-actions button{
+    flex:1;
     padding:13px;
     border:0;
     border-radius:10px;
-    background:#25c7f5;
-    color:#00131d;
-    font-weight:bold;
+    font-weight:700;
 }
 
-.secondary{
-    width:100%;
-    padding:13px;
-    border:1px solid #294662;
-    border-radius:10px;
-    background:#14263b;
+.login-btn{
+    background:#27b7ff;
+    color:#04101a;
+}
+
+.register-btn{
+    background:#162b41;
     color:white;
-    margin-top:10px;
+    border:1px solid #294965 !important;
 }
 
 .message{
+    min-height:22px;
     margin-top:15px;
-    color:#ff9e9e;
     text-align:center;
+    color:#ff9090;
+    font-size:14px;
 }
 
-/* APP */
+/* =========================
+   APP LAYOUT
+========================= */
 
 #app{
     min-height:100vh;
-    display:flex;
 }
 
 .sidebar{
@@ -135,70 +156,87 @@ button{
     left:0;
     top:0;
     bottom:0;
+    overflow-y:auto;
 }
 
-.brand{
-    font-size:21px;
-    font-weight:bold;
-    padding:12px;
-    margin-bottom:20px;
+.sidebar-logo{
+    font-size:22px;
+    font-weight:800;
+    padding:8px 10px 25px;
+    color:white;
+}
+
+.sidebar-logo span{
+    color:#6edcff;
+}
+
+.nav{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
 }
 
 .nav button{
     width:100%;
     text-align:left;
-    background:transparent;
     border:0;
-    color:#9fb2c8;
-    padding:13px;
-    border-radius:9px;
-    margin-bottom:5px;
+    background:transparent;
+    color:#9eb2c8;
+    padding:13px 14px;
+    border-radius:10px;
+    font-size:15px;
+    transition:0.2s;
 }
 
 .nav button:hover{
-    background:#142c45;
+    background:#10253b;
     color:white;
 }
 
-.logout{
-    position:absolute;
-    bottom:20px;
-    left:14px;
-    right:14px;
-    background:#57282d !important;
-    color:#ffb1b1 !important;
+.nav button:active{
+    background:#15334f;
 }
+
+/* =========================
+   MAIN
+========================= */
 
 .main{
     margin-left:235px;
     width:calc(100% - 235px);
+    min-height:100vh;
     padding:25px;
 }
 
 .topbar{
     display:flex;
-    justify-content:space-between;
     align-items:center;
+    justify-content:space-between;
     gap:15px;
     margin-bottom:25px;
+    padding:15px 18px;
+    background:#0b1929;
+    border:1px solid #1d334b;
+    border-radius:14px;
 }
 
-.welcome{
-    color:#91a4bb;
+.userbar{
+    color:#b8c9da;
     font-size:14px;
 }
 
-.username{
-    font-size:25px;
-    font-weight:bold;
+.credit-pill{
+    background:#112c42;
+    border:1px solid #28526e;
+    color:#7ce0ff;
+    padding:9px 14px;
+    border-radius:999px;
+    font-weight:700;
 }
 
-.credit{
-    background:#132c42;
-    border:1px solid #28516f;
-    padding:10px 16px;
-    border-radius:30px;
-}
+/* =========================
+   PAGES
+========================= */
 
 .page{
     display:none;
@@ -208,24 +246,32 @@ button{
     display:block;
 }
 
+/* =========================
+   DASHBOARD
+========================= */
+
 .hero{
-    background:linear-gradient(135deg,#102a43,#0c1c2e);
-    border:1px solid #23415e;
-    border-radius:18px;
-    padding:25px;
-    margin-bottom:20px;
+    background:
+        radial-gradient(circle at top right,#123b62,#0c1d31 55%);
+    border:1px solid #203b57;
+    border-radius:20px;
+    padding:35px;
+    margin-bottom:22px;
 }
 
 .hero h1{
-    font-size:30px;
-    margin-bottom:10px;
+    margin:0 0 12px;
+    font-size:38px;
 }
 
 .hero p{
-    color:#9db0c4;
+    margin:0;
+    max-width:700px;
+    color:#9fb4c9;
+    line-height:1.7;
 }
 
-.tools{
+.cards{
     display:grid;
     grid-template-columns:repeat(3,1fr);
     gap:18px;
@@ -235,125 +281,253 @@ button{
     background:#0d1b2d;
     border:1px solid #203a58;
     border-radius:16px;
-    padding:22px;
+    padding:24px;
+    transition:0.2s;
+}
+
+.tool-card:hover{
+    transform:translateY(-3px);
+    border-color:#315b7e;
+}
+
+.tool-card .icon{
+    font-size:35px;
+    margin-bottom:12px;
 }
 
 .tool-card h3{
-    margin-bottom:8px;
+    margin:0 0 8px;
 }
 
 .tool-card p{
-    color:#91a4bb;
+    color:#8fa6bc;
+    line-height:1.5;
     margin-bottom:18px;
 }
 
-.open-btn{
-    width:100%;
-    padding:11px;
+.tool-card button{
     border:0;
+    background:#173653;
+    color:white;
+    padding:10px 14px;
     border-radius:9px;
-    background:#25c7f5;
-    font-weight:bold;
 }
+
+/* =========================
+   GENERATOR
+========================= */
 
 .generator{
     background:#0d1b2d;
     border:1px solid #203a58;
     border-radius:18px;
-    padding:22px;
+    padding:25px;
 }
 
 .generator h2{
+    margin-top:0;
     margin-bottom:8px;
 }
 
-.generator .desc{
-    color:#91a4bb;
+.desc{
+    color:#8fa6bc;
+    font-size:14px;
     margin-bottom:20px;
 }
 
+.field{
+    margin-bottom:15px;
+}
+
+.field textarea{
+    width:100%;
+    min-height:150px;
+    resize:vertical;
+    padding:15px;
+    background:#081523;
+    border:1px solid #28435f;
+    border-radius:12px;
+    color:white;
+    outline:none;
+    font-size:15px;
+    line-height:1.5;
+}
+
+.field textarea:focus{
+    border-color:#4ecfff;
+}
+
 .generate-btn{
-    margin-top:12px;
-    padding:12px 22px;
     border:0;
+    background:#20b7ff;
+    color:#03111b;
+    font-weight:800;
+    padding:13px 20px;
     border-radius:10px;
-    background:#25c7f5;
-    font-weight:bold;
+    min-width:170px;
+}
+
+.generate-btn:hover{
+    background:#5bcaff;
 }
 
 .output{
-    margin-top:25px;
+    margin-top:22px;
+    min-height:50px;
 }
 
-.output img,
-.output video{
+.output img{
     max-width:100%;
-    width:100%;
     border-radius:12px;
-    background:#02070d;
+    border:1px solid #29455f;
+}
+
+.output video{
+    width:100%;
+    max-width:850px;
+    border-radius:12px;
+    background:black;
 }
 
 .output audio{
     width:100%;
+    max-width:650px;
 }
 
 .loading{
-    color:#7edcff;
-    padding:15px 0;
+    padding:16px;
+    background:#10253a;
+    border:1px solid #274661;
+    border-radius:10px;
+    color:#8edfff;
 }
 
 .error{
-    color:#ff9090;
-    padding:15px 0;
+    padding:14px;
+    background:#381a20;
+    border:1px solid #6d303a;
+    border-radius:10px;
+    color:#ff9ca5;
 }
 
-/* RECHARGE */
+/* =========================
+   RECHARGE
+========================= */
 
-.packages{
+.recharge-grid{
     display:grid;
     grid-template-columns:repeat(3,1fr);
     gap:18px;
 }
 
-.package{
+.recharge-card{
     background:#0d1b2d;
     border:1px solid #203a58;
-    border-radius:15px;
+    border-radius:16px;
     padding:25px;
     text-align:center;
 }
 
-.package h3{
-    margin-bottom:12px;
+.recharge-card h3{
+    margin-top:0;
 }
 
-.package .amount{
-    font-size:27px;
-    font-weight:bold;
-    margin-bottom:10px;
+.recharge-card .credits{
+    font-size:32px;
+    font-weight:800;
+    color:#6edcff;
+    margin:15px 0;
 }
 
-.package p{
-    color:#91a4bb;
-    margin-bottom:15px;
-}
-
-.disabled-btn{
+.recharge-card button{
     width:100%;
-    padding:11px;
     border:0;
+    padding:12px;
     border-radius:9px;
-    background:#365064;
-    color:#aebdca;
+    background:#172f47;
+    color:#7890a7;
+    cursor:not-allowed;
 }
 
-/* ADMIN */
+/* =========================
+   PROFILE
+========================= */
+
+.profile-card{
+    background:#0d1b2d;
+    border:1px solid #203a58;
+    border-radius:18px;
+    padding:25px;
+    max-width:600px;
+}
+
+.profile-row{
+    display:flex;
+    justify-content:space-between;
+    gap:20px;
+    padding:15px 0;
+    border-bottom:1px solid #1d334b;
+}
+
+.profile-row:last-child{
+    border-bottom:0;
+}
+
+.profile-label{
+    color:#8fa6bc;
+}
+
+.profile-value{
+    font-weight:700;
+}
+
+/* =========================
+   TABLE
+========================= */
+
+.table-wrap{
+    width:100%;
+    overflow-x:auto;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:650px;
+}
+
+th,
+td{
+    padding:13px 12px;
+    text-align:left;
+    border-bottom:1px solid #20384f;
+    vertical-align:top;
+}
+
+th{
+    color:#7edfff;
+    font-size:13px;
+    background:#0a1725;
+}
+
+td{
+    color:#c3d1df;
+    font-size:14px;
+}
+
+tr:hover td{
+    background:#0d2033;
+}
+
+/* =========================
+   ADMIN
+========================= */
 
 .stats{
     display:grid;
     grid-template-columns:repeat(4,1fr);
     gap:15px;
-    margin-bottom:20px;
+    margin-bottom:22px;
 }
 
 .stat{
@@ -363,17 +537,19 @@ button{
     padding:20px;
 }
 
-.stat span{
-    display:block;
-    color:#91a4bb;
+.stat-label{
+    color:#8fa6bc;
+    font-size:13px;
     margin-bottom:8px;
 }
 
-.stat strong{
-    font-size:26px;
+.stat-value{
+    font-size:28px;
+    font-weight:800;
+    color:#6edcff;
 }
 
-.admin-section{
+.admin-box{
     background:#0d1b2d;
     border:1px solid #203a58;
     border-radius:16px;
@@ -381,136 +557,87 @@ button{
     margin-bottom:20px;
 }
 
-.admin-section h3{
-    margin-bottom:15px;
+.admin-box h3{
+    margin-top:0;
 }
 
-.admin-form{
+.credit-controls{
     display:flex;
     gap:10px;
     flex-wrap:wrap;
 }
 
-.admin-form input{
+.credit-controls input{
     flex:1;
-    min-width:150px;
-    padding:11px;
-    border-radius:8px;
-    border:1px solid #294662;
-    background:#081525;
+    min-width:180px;
+    background:#081523;
+    border:1px solid #28435f;
     color:white;
-}
-
-.admin-form button{
-    padding:11px 18px;
-    border:0;
-    border-radius:8px;
-    background:#25c7f5;
-    font-weight:bold;
-}
-
-.table-wrap{
-    overflow:auto;
-}
-
-table{
-    width:100%;
-    border-collapse:collapse;
-}
-
-th,td{
+    border-radius:9px;
     padding:11px;
-    border-bottom:1px solid #203449;
-    text-align:left;
-    white-space:nowrap;
-}
-
-th{
-    color:#8fa5bb;
 }
 
 .small-btn{
-    padding:7px 10px;
     border:0;
-    border-radius:7px;
-    background:#31516a;
+    background:#1c4965;
     color:white;
+    padding:7px 10px;
+    border-radius:7px;
 }
 
-.danger{
-    background:#71383d;
+.small-btn.danger{
+    background:#71313a;
 }
 
 .badge{
-    padding:5px 8px;
-    border-radius:15px;
-    background:#183b4c;
-    font-size:12px;
+    display:inline-block;
+    padding:4px 8px;
+    border-radius:999px;
+    background:#164f5f;
+    color:#91eaff;
+    font-size:11px;
+    font-weight:700;
 }
 
-.blocked{
-    background:#5d3035;
+.badge.blocked{
+    background:#5b252d;
+    color:#ff9fa8;
 }
 
-/* PROFILE */
+/* =========================
+   RESPONSIVE
+========================= */
 
-.profile-box{
-    max-width:600px;
-    background:#0d1b2d;
-    border:1px solid #203a58;
-    border-radius:18px;
-    padding:25px;
-}
+@media(max-width:1000px){
 
-.profile-row{
-    display:flex;
-    justify-content:space-between;
-    border-bottom:1px solid #203449;
-    padding:15px 0;
-}
-
-.profile-row span{
-    color:#91a4bb;
-}
-
-/* MOBILE */
-
-@media(max-width:900px){
-
-    .sidebar{
-        width:190px;
+    .cards{
+        grid-template-columns:1fr;
     }
 
-    .main{
-        margin-left:190px;
-        width:calc(100% - 190px);
-    }
-
-    .tools,
-    .packages{
+    .recharge-grid{
         grid-template-columns:1fr;
     }
 
     .stats{
         grid-template-columns:repeat(2,1fr);
     }
+
 }
 
-@media(max-width:650px){
+@media(max-width:750px){
 
     .sidebar{
-        position:relative;
         width:100%;
         height:auto;
+        bottom:auto;
+        position:relative;
+        border-right:0;
+        border-bottom:1px solid #1d334b;
     }
 
-    #app{
-        display:block;
-    }
-
-    .logout{
-        position:static;
-        margin-top:10px;
+    .nav{
+        display:grid;
+        grid-template-columns:repeat(2,1fr);
     }
 
     .main{
@@ -519,14 +646,39 @@ th{
         padding:15px;
     }
 
+    .topbar{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .hero h1{
+        font-size:28px;
+    }
+
+    .stats{
+        grid-template-columns:1fr 1fr;
+    }
+
+}
+
+@media(max-width:480px){
+
+    .login-box{
+        padding:25px 20px;
+    }
+
+    .login-actions{
+        flex-direction:column;
+    }
+
     .stats{
         grid-template-columns:1fr;
     }
 
-    .topbar{
-        align-items:flex-start;
-        flex-direction:column;
+    .hero{
+        padding:25px 20px;
     }
+
 }
 
 </style>
@@ -534,65 +686,82 @@ th{
 
 <body>
 
-<!-- LOGIN -->
+<!-- =====================================================
+     LOGIN PAGE
+===================================================== -->
 
 <div id="loginPage">
 
     <div class="login-box">
 
-        <div class="logo">🤖 My AI Studio</div>
+        <div class="logo">
+            My <span>AI Studio</span>
+        </div>
 
         <div class="subtitle">
-            AI Image • Video • Audio Studio
+            Create AI images, videos and audio
         </div>
 
-        <div class="field">
+        <div class="input-group">
             <label>Username</label>
-
             <input
-                id="loginUsername"
                 type="text"
-                placeholder="Enter username">
+                id="loginUsername"
+                placeholder="Enter username"
+                autocomplete="username"
+            >
         </div>
 
-        <div class="field">
+        <div class="input-group">
             <label>Password</label>
-
             <input
-                id="loginPassword"
                 type="password"
-                placeholder="Enter password">
+                id="loginPassword"
+                placeholder="Enter password"
+                autocomplete="current-password"
+            >
         </div>
 
-        <button
-            class="primary"
-            onclick="login()">
-            Login
-        </button>
+        <div class="login-actions">
 
-        <button
-            class="secondary"
-            onclick="register()">
-            Create Account
-        </button>
+            <button
+                class="login-btn"
+                onclick="login()"
+            >
+                Login
+            </button>
+
+            <button
+                class="register-btn"
+                onclick="register()"
+            >
+                Register
+            </button>
+
+        </div>
 
         <div
             id="loginMessage"
-            class="message">
-        </div>
+            class="message"
+        ></div>
 
     </div>
 
 </div>
 
-<!-- APP -->
+
+<!-- =====================================================
+     MAIN APP
+===================================================== -->
 
 <div id="app" class="hidden">
 
+    <!-- SIDEBAR -->
+
     <aside class="sidebar">
 
-        <div class="brand">
-            🤖 My AI Studio
+        <div class="sidebar-logo">
+            My <span>AI Studio</span>
         </div>
 
         <div class="nav">
@@ -613,6 +782,10 @@ th{
                 🔊 Audio
             </button>
 
+            <button onclick="showPage('history')">
+                📜 History
+            </button>
+
             <button onclick="showPage('recharge')">
                 💳 Recharge
             </button>
@@ -624,111 +797,128 @@ th{
             <button
                 id="adminNav"
                 class="hidden"
-                onclick="showPage('admin')">
+                onclick="showPage('admin')"
+            >
                 🛠️ Admin Panel
+            </button>
+
+            <button onclick="logout()">
+                🚪 Logout
             </button>
 
         </div>
 
-        <button
-            class="nav logout"
-            onclick="logout()">
-            🚪 Logout
-        </button>
-
     </aside>
+
+
+    <!-- MAIN CONTENT -->
 
     <main class="main">
 
         <div class="topbar">
 
-            <div>
-
-                <div class="welcome">
-                    Welcome back
-                </div>
-
-                <div
-                    id="topUsername"
-                    class="username">
-                    User
-                </div>
-
+            <div
+                id="topUsername"
+                class="userbar"
+            >
+                👋 User
             </div>
 
-            <div class="credit">
-                💰
+            <div class="credit-pill">
+                ⚡ Credits:
                 <span id="creditCount">0</span>
-                Credits
             </div>
 
         </div>
 
-        <!-- DASHBOARD -->
+
+        <!-- =================================================
+             DASHBOARD
+        ================================================== -->
 
         <section
             id="dashboard"
-            class="page active">
+            class="page active"
+        >
 
             <div class="hero">
 
                 <h1>
-                    Create with AI 🚀
+                    Welcome to My AI Studio
                 </h1>
 
                 <p>
-                    Generate images, videos and audio
-                    from one simple AI studio.
+                    Create AI images, videos and audio
+                    from one simple studio.
+                    Choose a tool below and start creating.
                 </p>
 
             </div>
 
-            <div class="tools">
+
+            <div class="cards">
 
                 <div class="tool-card">
 
-                    <h3>🖼️ AI Image</h3>
+                    <div class="icon">
+                        🖼️
+                    </div>
+
+                    <h3>
+                        AI Image
+                    </h3>
 
                     <p>
-                        Turn your text prompt into an AI image.
+                        Turn your text prompts into
+                        AI-generated images.
                     </p>
 
-                    <button
-                        class="open-btn"
-                        onclick="showPage('image')">
-                        Create Image
+                    <button onclick="showPage('image')">
+                        Open Image Generator
                     </button>
 
                 </div>
 
+
                 <div class="tool-card">
 
-                    <h3>🎬 AI Video</h3>
+                    <div class="icon">
+                        🎬
+                    </div>
+
+                    <h3>
+                        AI Video
+                    </h3>
 
                     <p>
-                        Generate short AI videos from text.
+                        Generate short AI videos
+                        from your text prompts.
                     </p>
 
-                    <button
-                        class="open-btn"
-                        onclick="showPage('video')">
-                        Create Video
+                    <button onclick="showPage('video')">
+                        Open Video Generator
                     </button>
 
                 </div>
 
+
                 <div class="tool-card">
 
-                    <h3>🔊 AI Audio</h3>
+                    <div class="icon">
+                        🔊
+                    </div>
+
+                    <h3>
+                        AI Audio
+                    </h3>
 
                     <p>
-                        Convert your text into AI voice.
+                        Convert your text into
+                        AI-generated speech.
                     </p>
 
-                    <button
-                        class="open-btn"
-                        onclick="showPage('audio')">
-                        Create Audio
+                    <button onclick="showPage('audio')">
+                        Open Audio Generator
                     </button>
 
                 </div>
@@ -737,15 +927,21 @@ th{
 
         </section>
 
-        <!-- IMAGE -->
+
+        <!-- =================================================
+             IMAGE
+        ================================================== -->
 
         <section
             id="image"
-            class="page">
+            class="page"
+        >
 
             <div class="generator">
 
-                <h2>🖼️ AI Image Generator</h2>
+                <h2>
+                    🖼️ AI Image Generator
+                </h2>
 
                 <div class="desc">
                     Cost: 5 credits
@@ -755,33 +951,42 @@ th{
 
                     <textarea
                         id="imagePrompt"
-                        placeholder="Example: A futuristic city at sunset, cinematic lighting..."></textarea>
+                        placeholder="Example: A futuristic city at sunset, cinematic lighting..."
+                    ></textarea>
 
                 </div>
 
                 <button
                     class="generate-btn"
-                    onclick="generateImage()">
+                    onclick="generateImage()"
+                >
                     Generate Image
                 </button>
 
                 <div
                     id="imageOutput"
-                    class="output">
-                </div>
+                    class="output"
+                ></div>
 
             </div>
 
         </section>
-        <!-- VIDEO -->
+
+
+        <!-- =================================================
+             VIDEO
+        ================================================== -->
 
         <section
             id="video"
-            class="page">
+            class="page"
+        >
 
             <div class="generator">
 
-                <h2>🎬 AI Video Generator</h2>
+                <h2>
+                    🎬 AI Video Generator
+                </h2>
 
                 <div class="desc">
                     Cost: 21 credits • 4 second video
@@ -791,34 +996,42 @@ th{
 
                     <textarea
                         id="videoPrompt"
-                        placeholder="Example: A cinematic drone shot flying over mountains..."></textarea>
+                        placeholder="Example: A cinematic drone shot flying over mountains..."
+                    ></textarea>
 
                 </div>
 
                 <button
                     class="generate-btn"
-                    onclick="generateVideo()">
+                    onclick="generateVideo()"
+                >
                     Generate Video
                 </button>
 
                 <div
                     id="videoOutput"
-                    class="output">
-                </div>
+                    class="output"
+                ></div>
 
             </div>
 
         </section>
 
-        <!-- AUDIO -->
+
+        <!-- =================================================
+             AUDIO
+        ================================================== -->
 
         <section
             id="audio"
-            class="page">
+            class="page"
+        >
 
             <div class="generator">
 
-                <h2>🔊 AI Audio Generator</h2>
+                <h2>
+                    🔊 AI Audio Generator
+                </h2>
 
                 <div class="desc">
                     Cost: 8 credits
@@ -828,84 +1041,158 @@ th{
 
                     <textarea
                         id="audioText"
-                        placeholder="Type the text you want the AI voice to speak..."></textarea>
+                        placeholder="Type the text you want the AI voice to speak..."
+                    ></textarea>
 
                 </div>
 
                 <button
                     class="generate-btn"
-                    onclick="generateAudio()">
+                    onclick="generateAudio()"
+                >
                     Generate Audio
                 </button>
 
                 <div
                     id="audioOutput"
-                    class="output">
-                </div>
+                    class="output"
+                ></div>
 
             </div>
 
         </section>
-
-        <!-- RECHARGE -->
+        <!-- =================================================
+             HISTORY
+        ================================================== -->
 
         <section
-            id="recharge"
-            class="page">
+            id="history"
+            class="page"
+        >
 
             <div class="generator">
 
-                <h2>💳 Recharge Credits</h2>
+                <h2>
+                    📜 Generation History
+                </h2>
 
                 <div class="desc">
-                    Payment system will be connected later.
+                    Your recent AI image, video and audio generations.
                 </div>
 
-                <div class="packages">
+                <div class="table-wrap">
 
-                    <div class="package">
+                    <table>
 
-                        <h3>⚡ Starter</h3>
+                        <thead>
 
-                        <div class="amount">
-                            100 Credits
+                            <tr>
+                                <th>Type</th>
+                                <th>Prompt / Text</th>
+                                <th>Credits</th>
+                                <th>Date</th>
+                            </tr>
+
+                        </thead>
+
+                        <tbody id="userHistoryTable">
+
+                            <tr>
+                                <td colspan="4">
+                                    No history yet.
+                                </td>
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             RECHARGE
+        ================================================== -->
+
+        <section
+            id="recharge"
+            class="page"
+        >
+
+            <div class="generator">
+
+                <h2>
+                    💳 Recharge Credits
+                </h2>
+
+                <div class="desc">
+                    Recharge system is coming soon.
+                </div>
+
+
+                <div class="recharge-grid">
+
+                    <div class="recharge-card">
+
+                        <h3>
+                            Starter
+                        </h3>
+
+                        <div class="credits">
+                            100
                         </div>
 
-                        <p>For testing</p>
+                        <p>
+                            Credits
+                        </p>
 
-                        <button class="disabled-btn">
+                        <button disabled>
                             Coming Soon
                         </button>
 
                     </div>
 
-                    <div class="package">
 
-                        <h3>🛰️ Creator</h3>
+                    <div class="recharge-card">
 
-                        <div class="amount">
-                            500 Credits
+                        <h3>
+                            Creator
+                        </h3>
+
+                        <div class="credits">
+                            500
                         </div>
 
-                        <p>Regular use</p>
+                        <p>
+                            Credits
+                        </p>
 
-                        <button class="disabled-btn">
+                        <button disabled>
                             Coming Soon
                         </button>
 
                     </div>
 
-                    <div class="package">
 
-                        <h3>🔥 Pro</h3>
+                    <div class="recharge-card">
 
-                        <div class="amount">
-                            1000 Credits
+                        <h3>
+                            Pro
+                        </h3>
+
+                        <div class="credits">
+                            1000
                         </div>
 
-                        <p>Heavy use</p>
+                        <p>
+                            Credits
+                        </p>
 
-                        <button class="disabled-btn">
+                        <button disabled>
                             Coming Soon
                         </button>
 
@@ -917,43 +1204,66 @@ th{
 
         </section>
 
-        <!-- PROFILE -->
+
+        <!-- =================================================
+             PROFILE
+        ================================================== -->
 
         <section
             id="profile"
-            class="page">
+            class="page"
+        >
 
-            <div class="profile-box">
+            <div class="profile-card">
 
-                <h2>👤 Profile</h2>
+                <h2>
+                    👤 My Profile
+                </h2>
 
                 <div class="profile-row">
 
-                    <span>Username</span>
+                    <div class="profile-label">
+                        Username
+                    </div>
 
-                    <strong id="profileUsername">
+                    <div
+                        id="profileUsername"
+                        class="profile-value"
+                    >
                         -
-                    </strong>
+                    </div>
 
                 </div>
 
+
                 <div class="profile-row">
 
-                    <span>Credits</span>
+                    <div class="profile-label">
+                        Credits
+                    </div>
 
-                    <strong id="profileCredits">
-                        -
-                    </strong>
+                    <div
+                        id="profileCredits"
+                        class="profile-value"
+                    >
+                        0
+                    </div>
 
                 </div>
 
+
                 <div class="profile-row">
 
-                    <span>Account Type</span>
+                    <div class="profile-label">
+                        Account Type
+                    </div>
 
-                    <strong id="profileType">
+                    <div
+                        id="profileType"
+                        class="profile-value"
+                    >
                         User
-                    </strong>
+                    </div>
 
                 </div>
 
@@ -961,196 +1271,250 @@ th{
 
         </section>
 
-        <!-- ADMIN -->
+
+        <!-- =================================================
+             ADMIN PANEL
+        ================================================== -->
 
         <section
             id="admin"
-            class="page">
+            class="page"
+        >
 
-            <div class="hero">
+            <div class="generator">
 
-                <h1>
+                <h2>
                     🛠️ Admin Panel
-                </h1>
+                </h2>
 
-                <p>
-                    Manage users, credits and activity.
-                </p>
+                <div class="desc">
+                    Manage users, credits and generation history.
+                </div>
 
-            </div>
 
-            <!-- STATS -->
+                <!-- ADMIN STATS -->
 
-            <div class="stats">
+                <div class="stats">
 
-                <div class="stat">
+                    <div class="stat">
 
-                    <span>Total Users</span>
+                        <div class="stat-label">
+                            Total Users
+                        </div>
 
-                    <strong id="statUsers">
-                        0
-                    </strong>
+                        <div
+                            id="statUsers"
+                            class="stat-value"
+                        >
+                            0
+                        </div>
+
+                    </div>
+
+
+                    <div class="stat">
+
+                        <div class="stat-label">
+                            Generations
+                        </div>
+
+                        <div
+                            id="statGenerations"
+                            class="stat-value"
+                        >
+                            0
+                        </div>
+
+                    </div>
+
+
+                    <div class="stat">
+
+                        <div class="stat-label">
+                            Total Credits
+                        </div>
+
+                        <div
+                            id="statCredits"
+                            class="stat-value"
+                        >
+                            0
+                        </div>
+
+                    </div>
+
+
+                    <div class="stat">
+
+                        <div class="stat-label">
+                            Blocked Users
+                        </div>
+
+                        <div
+                            id="statBlocked"
+                            class="stat-value"
+                        >
+                            0
+                        </div>
+
+                    </div>
 
                 </div>
 
-                <div class="stat">
 
-                    <span>Total Generations</span>
+                <!-- CREDIT CONTROL -->
 
-                    <strong id="statGenerations">
-                        0
-                    </strong>
+                <div class="admin-box">
 
-                </div>
+                    <h3>
+                        💳 Credit Control
+                    </h3>
 
-                <div class="stat">
+                    <div class="credit-controls">
 
-                    <span>Total Credits</span>
+                        <input
+                            type="text"
+                            id="creditUsername"
+                            placeholder="Username"
+                        >
 
-                    <strong id="statCredits">
-                        0
-                    </strong>
+                        <input
+                            type="number"
+                            id="creditAmount"
+                            placeholder="Credit amount"
+                        >
 
-                </div>
+                        <button
+                            class="generate-btn"
+                            onclick="adjustCredits()"
+                        >
+                            Update Credits
+                        </button>
 
-                <div class="stat">
-
-                    <span>Blocked Users</span>
-
-                    <strong id="statBlocked">
-                        0
-                    </strong>
-
-                </div>
-
-            </div>
-
-            <!-- CREDIT CONTROL -->
-
-            <div class="admin-section">
-
-                <h3>
-                    💰 Add / Remove Credits
-                </h3>
-
-                <div class="admin-form">
-
-                    <input
-                        id="creditUsername"
-                        placeholder="Username">
-
-                    <input
-                        id="creditAmount"
-                        type="number"
-                        placeholder="+100 or -50">
-
-                    <button
-                        onclick="adjustCredits()">
-                        Apply
-                    </button>
+                    </div>
 
                 </div>
 
-            </div>
 
-            <!-- USERS -->
+                <!-- USERS -->
 
-            <div class="admin-section">
+                <div class="admin-box">
 
-                <h3>👥 Users</h3>
+                    <h3>
+                        👥 Users
+                    </h3>
 
-                <div class="table-wrap">
+                    <div class="table-wrap">
 
-                    <table>
+                        <table>
 
-                        <thead>
+                            <thead>
 
-                            <tr>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Username</th>
+                                    <th>Credits</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
 
-                                <th>ID</th>
-                                <th>Username</th>
-                                <th>Credits</th>
-                                <th>Type</th>
-                                <th>Status</th>
-                                <th>Action</th>
+                            </thead>
 
-                            </tr>
+                            <tbody id="usersTable">
 
-                        </thead>
+                                <tr>
+                                    <td colspan="6">
+                                        Loading...
+                                    </td>
+                                </tr>
 
-                        <tbody id="usersTable">
-                        </tbody>
+                            </tbody>
 
-                    </table>
+                        </table>
 
-                </div>
-
-            </div>
-
-            <!-- GENERATION HISTORY -->
-
-            <div class="admin-section">
-
-                <h3>
-                    📝 Generation History
-                </h3>
-
-                <div class="table-wrap">
-
-                    <table>
-
-                        <thead>
-
-                            <tr>
-
-                                <th>User</th>
-                                <th>Type</th>
-                                <th>Prompt</th>
-                                <th>Credits</th>
-                                <th>Date</th>
-
-                            </tr>
-
-                        </thead>
-
-                        <tbody id="generationTable">
-                        </tbody>
-
-                    </table>
+                    </div>
 
                 </div>
 
-            </div>
 
-            <!-- CREDIT HISTORY -->
+                <!-- GENERATION HISTORY -->
 
-            <div class="admin-section">
+                <div class="admin-box">
 
-                <h3>
-                    💳 Credit History
-                </h3>
+                    <h3>
+                        📊 All Generations
+                    </h3>
 
-                <div class="table-wrap">
+                    <div class="table-wrap">
 
-                    <table>
+                        <table>
 
-                        <thead>
+                            <thead>
 
-                            <tr>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Type</th>
+                                    <th>Prompt / Text</th>
+                                    <th>Credits</th>
+                                    <th>Date</th>
+                                </tr>
 
-                                <th>User</th>
-                                <th>Amount</th>
-                                <th>Reason</th>
-                                <th>Date</th>
+                            </thead>
 
-                            </tr>
+                            <tbody id="generationTable">
 
-                        </thead>
+                                <tr>
+                                    <td colspan="5">
+                                        Loading...
+                                    </td>
+                                </tr>
 
-                        <tbody id="creditHistoryTable">
-                        </tbody>
+                            </tbody>
 
-                    </table>
+                        </table>
+
+                    </div>
+
+                </div>
+
+
+                <!-- CREDIT HISTORY -->
+
+                <div class="admin-box">
+
+                    <h3>
+                        💰 Credit History
+                    </h3>
+
+                    <div class="table-wrap">
+
+                        <table>
+
+                            <thead>
+
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Amount</th>
+                                    <th>Reason</th>
+                                    <th>Date</th>
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="creditHistoryTable">
+
+                                <tr>
+                                    <td colspan="4">
+                                        Loading...
+                                    </td>
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
 
                 </div>
 
@@ -1162,18 +1526,13 @@ th{
 
 </div>
 
+
+<!-- =====================================================
+     JAVASCRIPT STARTS IN PART 3
+===================================================== -->
 <script>
 
-/* =====================================================
-GLOBAL
-===================================================== */
-
 let currentUser = null;
-
-
-/* =====================================================
-API
-===================================================== */
 
 async function api(url, options = {}){
 
@@ -1192,43 +1551,29 @@ async function api(url, options = {}){
     const data = await response.json();
 
     if(!response.ok){
-
         throw new Error(
             data.error || "Something went wrong"
         );
-
     }
 
     return data;
 }
 
 
-/* =====================================================
-LOGIN
-===================================================== */
-
 async function login(){
 
     const username =
-        document
-            .getElementById("loginUsername")
-            .value
-            .trim();
+        document.getElementById("loginUsername").value.trim();
 
     const password =
-        document
-            .getElementById("loginPassword")
-            .value;
+        document.getElementById("loginPassword").value;
 
     const message =
-        document
-            .getElementById("loginMessage");
+        document.getElementById("loginMessage");
 
     if(!username || !password){
-
         message.textContent =
             "Please enter username and password.";
-
         return;
     }
 
@@ -1251,36 +1596,28 @@ async function login(){
 
     }catch(error){
 
-        message.textContent =
-            error.message;
+        message.style.color = "#ff9090";
+        message.textContent = error.message;
 
     }
+
 }
 
-
-/* =====================================================
-REGISTER
-===================================================== */
 
 async function register(){
 
     const username =
-        document
-            .getElementById("loginUsername")
-            .value
-            .trim();
+        document.getElementById("loginUsername").value.trim();
 
     const password =
-        document
-            .getElementById("loginPassword")
-            .value;
+        document.getElementById("loginPassword").value;
 
     const message =
-        document
-            .getElementById("loginMessage");
+        document.getElementById("loginMessage");
 
     if(!username || !password){
 
+        message.style.color = "#ff9090";
         message.textContent =
             "Enter username and password first.";
 
@@ -1300,27 +1637,19 @@ async function register(){
             }
         );
 
-        message.style.color =
-            "#80e5a5";
-
+        message.style.color = "#80e5a5";
         message.textContent =
             "Account created. Now login.";
 
     }catch(error){
 
-        message.style.color =
-            "#ff9090";
-
-        message.textContent =
-            error.message;
+        message.style.color = "#ff9090";
+        message.textContent = error.message;
 
     }
+
 }
 
-
-/* =====================================================
-ENTER STUDIO
-===================================================== */
 
 async function enterStudio(){
 
@@ -1337,25 +1666,21 @@ async function enterStudio(){
     await loadMe();
 
     showPage("dashboard");
+
 }
 
-
-/* =====================================================
-LOAD USER
-===================================================== */
 
 async function loadMe(){
 
     try{
 
-        const data =
-            await api("/me");
+        const data = await api("/me");
 
         if(!data.logged_in){
 
             await logout(false);
-
             return;
+
         }
 
         currentUser = data;
@@ -1383,24 +1708,18 @@ async function loadMe(){
         document
             .getElementById("profileType")
             .textContent =
-            data.is_admin
-                ? "Admin"
-                : "User";
+            data.is_admin ? "Admin" : "User";
 
         const adminNav =
             document.getElementById("adminNav");
 
         if(data.is_admin){
 
-            adminNav
-                .classList
-                .remove("hidden");
+            adminNav.classList.remove("hidden");
 
         }else{
 
-            adminNav
-                .classList
-                .add("hidden");
+            adminNav.classList.add("hidden");
 
         }
 
@@ -1409,12 +1728,9 @@ async function loadMe(){
         console.error(error);
 
     }
+
 }
 
-
-/* =====================================================
-SHOW PAGE
-===================================================== */
 
 function showPage(page){
 
@@ -1422,9 +1738,7 @@ function showPage(page){
         .querySelectorAll(".page")
         .forEach(function(element){
 
-            element
-                .classList
-                .remove("active");
+            element.classList.remove("active");
 
         });
 
@@ -1433,9 +1747,13 @@ function showPage(page){
 
     if(selected){
 
-        selected
-            .classList
-            .add("active");
+        selected.classList.add("active");
+
+    }
+
+    if(page === "history"){
+
+        loadUserHistory();
 
     }
 
@@ -1444,12 +1762,9 @@ function showPage(page){
         loadAdmin();
 
     }
+
 }
 
-
-/* =====================================================
-REFRESH CREDITS
-===================================================== */
 
 async function refreshCredits(){
 
@@ -1473,12 +1788,9 @@ async function refreshCredits(){
         console.error(error);
 
     }
+
 }
 
-
-/* =====================================================
-IMAGE
-===================================================== */
 
 async function generateImage(){
 
@@ -1489,8 +1801,7 @@ async function generateImage(){
             .trim();
 
     const output =
-        document
-            .getElementById("imageOutput");
+        document.getElementById("imageOutput");
 
     if(!prompt){
 
@@ -1498,6 +1809,7 @@ async function generateImage(){
             '<div class="error">Please enter a prompt.</div>';
 
         return;
+
     }
 
     output.innerHTML =
@@ -1532,6 +1844,11 @@ async function generateImage(){
             .textContent =
             data.credits;
 
+        document
+            .getElementById("profileCredits")
+            .textContent =
+            data.credits;
+
     }catch(error){
 
         output.innerHTML =
@@ -1540,12 +1857,9 @@ async function generateImage(){
             '</div>';
 
     }
+
 }
 
-
-/* =====================================================
-VIDEO
-===================================================== */
 
 async function generateVideo(){
 
@@ -1556,8 +1870,7 @@ async function generateVideo(){
             .trim();
 
     const output =
-        document
-            .getElementById("videoOutput");
+        document.getElementById("videoOutput");
 
     if(!prompt){
 
@@ -1565,6 +1878,7 @@ async function generateVideo(){
             '<div class="error">Please enter a prompt.</div>';
 
         return;
+
     }
 
     output.innerHTML =
@@ -1601,6 +1915,11 @@ async function generateVideo(){
             .textContent =
             data.credits;
 
+        document
+            .getElementById("profileCredits")
+            .textContent =
+            data.credits;
+
     }catch(error){
 
         output.innerHTML =
@@ -1609,12 +1928,9 @@ async function generateVideo(){
             '</div>';
 
     }
+
 }
 
-
-/* =====================================================
-AUDIO
-===================================================== */
 
 async function generateAudio(){
 
@@ -1625,8 +1941,7 @@ async function generateAudio(){
             .trim();
 
     const output =
-        document
-            .getElementById("audioOutput");
+        document.getElementById("audioOutput");
 
     if(!text){
 
@@ -1634,6 +1949,7 @@ async function generateAudio(){
             '<div class="error">Please enter text.</div>';
 
         return;
+
     }
 
     output.innerHTML =
@@ -1670,6 +1986,11 @@ async function generateAudio(){
             .textContent =
             data.credits;
 
+        document
+            .getElementById("profileCredits")
+            .textContent =
+            data.credits;
+
     }catch(error){
 
         output.innerHTML =
@@ -1678,10 +1999,108 @@ async function generateAudio(){
             '</div>';
 
     }
+
 }
-/* =====================================================
-ADMIN
-===================================================== */
+
+
+/* USER HISTORY */
+
+async function loadUserHistory(){
+
+    const table =
+        document.getElementById("userHistoryTable");
+
+    if(!table){
+        return;
+    }
+
+    table.innerHTML =
+        '<tr>' +
+        '<td colspan="4">' +
+        'Loading history...' +
+        '</td>' +
+        '</tr>';
+
+    try{
+
+        const data =
+            await api("/history");
+
+        if(
+            !data.history ||
+            data.history.length === 0
+        ){
+
+            table.innerHTML =
+                '<tr>' +
+                '<td colspan="4">' +
+                'No generations yet.' +
+                '</td>' +
+                '</tr>';
+
+            return;
+
+        }
+
+        table.innerHTML = "";
+
+        data.history.forEach(function(item){
+
+            const tr =
+                document.createElement("tr");
+
+            let icon = "🤖";
+
+            if(item.type === "image"){
+                icon = "🖼️";
+            }
+
+            if(item.type === "video"){
+                icon = "🎬";
+            }
+
+            if(item.type === "audio"){
+                icon = "🔊";
+            }
+
+            tr.innerHTML =
+                '<td>' +
+                icon +
+                " " +
+                escapeHtml(item.type) +
+                '</td>' +
+
+                '<td>' +
+                escapeHtml(item.prompt || "") +
+                '</td>' +
+
+                '<td>' +
+                item.credits +
+                '</td>' +
+
+                '<td>' +
+                escapeHtml(item.created_at || "") +
+                '</td>';
+
+            table.appendChild(tr);
+
+        });
+
+    }catch(error){
+
+        table.innerHTML =
+            '<tr>' +
+            '<td colspan="4" class="error">' +
+            escapeHtml(error.message) +
+            '</td>' +
+            '</tr>';
+
+    }
+
+}
+
+
+/* ADMIN */
 
 async function loadAdmin(){
 
@@ -1693,10 +2112,10 @@ async function loadAdmin(){
         if(!me.is_admin){
 
             alert("Admin access required.");
-
             showPage("dashboard");
 
             return;
+
         }
 
         await loadAdminStats();
@@ -1709,12 +2128,9 @@ async function loadAdmin(){
         alert(error.message);
 
     }
+
 }
 
-
-/* =====================================================
-ADMIN STATS
-===================================================== */
 
 async function loadAdminStats(){
 
@@ -1740,12 +2156,9 @@ async function loadAdminStats(){
         .getElementById("statBlocked")
         .textContent =
         data.blocked;
+
 }
 
-
-/* =====================================================
-USERS
-===================================================== */
 
 async function loadUsers(){
 
@@ -1788,23 +2201,35 @@ async function loadUsers(){
         }
 
         tr.innerHTML =
-            '<td>' + user.id + '</td>' +
-            '<td>' + escapeHtml(user.username) + '</td>' +
-            '<td>' + user.credits + '</td>' +
-            '<td>' + type + '</td>' +
-            '<td>' + status + '</td>' +
-            '<td>' + action + '</td>';
+            '<td>' +
+            user.id +
+            '</td>' +
+
+            '<td>' +
+            escapeHtml(user.username) +
+            '</td>' +
+
+            '<td>' +
+            user.credits +
+            '</td>' +
+
+            '<td>' +
+            type +
+            '</td>' +
+
+            '<td>' +
+            status +
+            '</td>' +
+
+            '<td>' +
+            action +
+            '</td>';
 
         table.appendChild(tr);
 
     });
+
 }
-
-
-/* =====================================================
-ADD / REMOVE CREDITS
-===================================================== */
-
 async function adjustCredits(){
 
     const username =
@@ -1822,9 +2247,7 @@ async function adjustCredits(){
 
     if(!username || !amount){
 
-        alert(
-            "Enter username and amount."
-        );
+        alert("Enter username and amount.");
 
         return;
     }
@@ -1859,20 +2282,19 @@ async function adjustCredits(){
         alert(error.message);
 
     }
+
 }
 
 
-/* =====================================================
-BLOCK / UNBLOCK
-===================================================== */
-
 async function toggleBlock(username){
 
-    if(!confirm(
-        "Change block status for " +
-        username +
-        "?"
-    )){
+    if(
+        !confirm(
+            "Change block status for " +
+            username +
+            "?"
+        )
+    ){
 
         return;
     }
@@ -1896,12 +2318,9 @@ async function toggleBlock(username){
         alert(error.message);
 
     }
+
 }
 
-
-/* =====================================================
-GENERATION HISTORY
-===================================================== */
 
 async function loadGenerations(){
 
@@ -1942,12 +2361,9 @@ async function loadGenerations(){
         table.appendChild(tr);
 
     });
+
 }
 
-
-/* =====================================================
-CREDIT HISTORY
-===================================================== */
 
 async function loadCreditHistory(){
 
@@ -1986,12 +2402,9 @@ async function loadCreditHistory(){
         table.appendChild(tr);
 
     });
+
 }
 
-
-/* =====================================================
-LOGOUT
-===================================================== */
 
 async function logout(callServer = true){
 
@@ -2006,7 +2419,9 @@ async function logout(callServer = true){
                 }
             );
 
-        }catch(error){}
+        }catch(error){
+
+        }
 
     }
 
@@ -2033,12 +2448,9 @@ async function logout(callServer = true){
     document
         .getElementById("loginMessage")
         .textContent = "";
+
 }
 
-
-/* =====================================================
-SECURITY HELPERS
-===================================================== */
 
 function escapeHtml(value){
 
@@ -2061,10 +2473,6 @@ function escapeJs(value){
 }
 
 
-/* =====================================================
-CHECK LOGIN
-===================================================== */
-
 async function checkLogin(){
 
     try{
@@ -2082,11 +2490,10 @@ async function checkLogin(){
 
     }catch(error){
 
-        console.log(
-            "Not logged in"
-        );
+        console.log("Not logged in");
 
     }
+
 }
 
 
