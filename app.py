@@ -1,20 +1,46 @@
 import os
-import sqlite3
 import uuid
+import sqlite3
 from functools import wraps
 from urllib.parse import quote
 
 import requests
-from flask import Flask, jsonify, render_template, request, session, send_from_directory
-from werkzeug.security import generate_password_hash, check_password_hash
 
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    session,
+    render_template
+)
+
+from werkzeug.security import (
+    generate_password_hash,
+    check_password_hash
+)
+
+
+# ============================================================
+# APP CONFIG
+# ============================================================
 
 app = Flask(__name__)
 
-app.secret_key = os.getenv(
+app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY",
-    "change-this-secret-key"
+    "my-ai-studio-secret-2026"
 )
+
+app.config["SESSION_COOKIE_NAME"] = "my_ai_studio_session"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = False
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30
+
+
+# ============================================================
+# CREDITS
+# ============================================================
 
 NEW_USER_CREDITS = 100
 
@@ -22,129 +48,180 @@ IMAGE_COST = 5
 AUDIO_COST = 8
 VIDEO_COST = 21
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-POLLINATIONS_API_KEY = os.getenv(
+# ============================================================
+# DATABASE
+# ============================================================
+
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    ""
+).strip()
+
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+
+# ============================================================
+# POLLINATIONS
+# ============================================================
+
+POLLINATIONS_API_KEY = os.environ.get(
     "POLLINATIONS_API_KEY",
     ""
 ).strip()
 
 POLLINATIONS_BASE = "https://gen.pollinations.ai"
 
-ADMIN_USERNAME = os.getenv(
+
+# ============================================================
+# ADMIN
+# ============================================================
+
+ADMIN_USERNAME = os.environ.get(
     "ADMIN_USERNAME",
-    ""
+    "CHANDANADMIN"
 ).strip()
 
+
+# ============================================================
+# GENERATED FILES
+# ============================================================
+
 GENERATED_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
+    os.path.dirname(
+        os.path.abspath(__file__)
+    ),
     "generated"
 )
 
-os.makedirs(GENERATED_DIR, exist_ok=True)
+os.makedirs(
+    GENERATED_DIR,
+    exist_ok=True
+)
 
 
-# =========================================================
-# DATABASE
-# =========================================================
-
-def using_postgres():
-    return bool(DATABASE_URL)
-
-
-def get_db():
-    if using_postgres():
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn, True
-
-    conn = sqlite3.connect(
-        os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "studio.db"
-        )
-    )
-
-    conn.row_factory = sqlite3.Row
-
-    return conn, False
-
+# ============================================================
+# DATABASE HELPERS
+# ============================================================
 
 def db_placeholder():
-    if using_postgres():
+
+    if USE_POSTGRES:
         return "%s"
+
     return "?"
 
 
+def db_connection():
+
+    if USE_POSTGRES:
+
+        return psycopg2.connect(
+            DATABASE_URL,
+            cursor_factory=RealDictCursor
+        )
+
+    return sqlite3.connect(
+        os.path.join(
+            os.path.dirname(
+                os.path.abspath(__file__)
+            ),
+            "users.db"
+        )
+    )
+
+
+def db_execute(
+    query,
+    params=(),
+    fetchone=False,
+    fetchall=False,
+    commit=False
+):
+
+    con = db_connection()
+
+    try:
+
+        cur = con.cursor()
+
+        cur.execute(
+            query,
+            params
+        )
+
+        result = None
+
+        if fetchone:
+            result = cur.fetchone()
+
+        elif fetchall:
+            result = cur.fetchall()
+
+        if commit:
+            con.commit()
+
+        return result
+
+    finally:
+
+        con.close()
+
+
 def db_bool(value):
-    if using_postgres():
+
+    if USE_POSTGRES:
         return bool(value)
 
     return 1 if value else 0
 
 
-def db_execute(query, params=(), fetchone=False, fetchall=False):
-    conn, postgres = get_db()
+def row_value(
+    row,
+    key,
+    index=None,
+    default=None
+):
 
-    try:
-        if postgres:
-            from psycopg2.extras import RealDictCursor
+    if row is None:
+        return default
 
-            cursor = conn.cursor(
-                cursor_factory=RealDictCursor
-            )
+    if isinstance(row, dict):
+        return row.get(
+            key,
+            default
+        )
 
-            cursor.execute(query, params)
+    if index is not None:
 
-            result = None
+        try:
+            return row[index]
+        except Exception:
+            return default
 
-            if fetchone:
-                result = cursor.fetchone()
+    return default
 
-            elif fetchall:
-                result = cursor.fetchall()
 
-            conn.commit()
-            cursor.close()
-
-            return result
-
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-
-        result = None
-
-        if fetchone:
-            row = cursor.fetchone()
-            result = dict(row) if row else None
-
-        elif fetchall:
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-
-        conn.commit()
-
-        return result
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        conn.close()
-
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
 
 def init_database():
-    conn, postgres = get_db()
+
+    con = db_connection()
 
     try:
-        cursor = conn.cursor()
 
-        if postgres:
+        cur = con.cursor()
 
-            cursor.execute("""
+        if USE_POSTGRES:
+
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
@@ -154,21 +231,24 @@ def init_database():
                     blocked BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+                """
+            )
 
-            cursor.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS generation_history (
                     id SERIAL PRIMARY KEY,
                     user_id INTEGER NOT NULL,
                     type TEXT NOT NULL,
                     prompt TEXT NOT NULL,
                     credits INTEGER NOT NULL,
-                    file_url TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+                """
+            )
 
-            cursor.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS credit_history (
                     id SERIAL PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -176,11 +256,32 @@ def init_database():
                     reason TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+                """
+            )
+
+            con.commit()
+
+            if ADMIN_USERNAME:
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET
+                        is_admin = TRUE,
+                        blocked = FALSE
+                    WHERE username = %s
+                    """,
+                    (
+                        ADMIN_USERNAME,
+                    )
+                )
+
+                con.commit()
 
         else:
 
-            cursor.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
@@ -190,21 +291,24 @@ def init_database():
                     blocked INTEGER NOT NULL DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+                """
+            )
 
-            cursor.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS generation_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     type TEXT NOT NULL,
                     prompt TEXT NOT NULL,
                     credits INTEGER NOT NULL,
-                    file_url TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+                """
+            )
 
-            cursor.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS credit_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
@@ -212,39 +316,41 @@ def init_database():
                     reason TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+                """
+            )
 
-        conn.commit()
+            con.commit()
+
+            if ADMIN_USERNAME:
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET
+                        is_admin = 1,
+                        blocked = 0
+                    WHERE username = ?
+                    """,
+                    (
+                        ADMIN_USERNAME,
+                    )
+                )
+
+                con.commit()
 
     finally:
-        conn.close()
 
-    if ADMIN_USERNAME:
-
-        placeholder = db_placeholder()
-
-        db_execute(
-            f"""
-            UPDATE users
-            SET is_admin = {placeholder}
-            WHERE username = {placeholder}
-            """,
-            (
-                db_bool(True),
-                ADMIN_USERNAME
-            )
-        )
+        con.close()
 
 
-# =========================================================
-# USER / AUTH
-# =========================================================
+init_database()
 
-def current_user():
-    user_id = session.get("user_id")
 
-    if not user_id:
-        return None
+# ============================================================
+# USER FUNCTIONS
+# ============================================================
+
+def get_user_by_id(user_id):
 
     placeholder = db_placeholder()
 
@@ -253,6 +359,7 @@ def current_user():
         SELECT
             id,
             username,
+            password,
             credits,
             is_admin,
             blocked,
@@ -260,178 +367,288 @@ def current_user():
         FROM users
         WHERE id = {placeholder}
         """,
-        (user_id,),
+        (
+            user_id,
+        ),
         fetchone=True
     )
 
 
-def login_required(function):
-
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-
-        user = current_user()
-
-        if not user:
-            return jsonify({
-                "error": "Please login first."
-            }), 401
-
-        if user["blocked"]:
-            session.clear()
-
-            return jsonify({
-                "error": "Your account is blocked."
-            }), 403
-
-        return function(*args, **kwargs)
-
-    return wrapper
-
-
-def admin_required(function):
-
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-
-        user = current_user()
-
-        if not user:
-            return jsonify({
-                "error": "Please login first."
-            }), 401
-
-        if not user["is_admin"]:
-            return jsonify({
-                "error": "Admin access required."
-            }), 403
-
-        return function(*args, **kwargs)
-
-    return wrapper
-
-
-# =========================================================
-# CREDITS
-# =========================================================
-
-def get_user_credits(user_id):
+def get_user_by_username(username):
 
     placeholder = db_placeholder()
 
-    row = db_execute(
+    return db_execute(
         f"""
-        SELECT credits
+        SELECT
+            id,
+            username,
+            password,
+            credits,
+            is_admin,
+            blocked,
+            created_at
         FROM users
-        WHERE id = {placeholder}
+        WHERE username = {placeholder}
         """,
-        (user_id,),
+        (
+            username,
+        ),
         fetchone=True
     )
 
-    if not row:
+
+def get_credits(user_id):
+
+    user = get_user_by_id(
+        user_id
+    )
+
+    if not user:
         return 0
 
-    return int(row["credits"])
-
-
-def add_credit_history(
-    user_id,
-    amount,
-    reason
-):
-
-    placeholder = db_placeholder()
-
-    db_execute(
-        f"""
-        INSERT INTO credit_history
-        (
-            user_id,
-            amount,
-            reason
-        )
-        VALUES (
-            {placeholder},
-            {placeholder},
-            {placeholder}
-        )
-        """,
-        (
-            user_id,
-            amount,
-            reason
+    return int(
+        row_value(
+            user,
+            "credits",
+            3,
+            0
         )
     )
 
 
-def deduct_credits(
-    user_id,
-    amount,
-    reason
-):
+# ============================================================
+# AUTH DECORATORS
+# ============================================================
 
-    current = get_user_credits(user_id)
+def login_required(fn):
 
-    if current < amount:
-        return False
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
 
-    placeholder = db_placeholder()
+        if not session.get("user_id"):
 
-    db_execute(
-        f"""
-        UPDATE users
-        SET credits = credits - {placeholder}
-        WHERE id = {placeholder}
-        """,
-        (
-            amount,
+            return jsonify(
+                {
+                    "error":
+                        "Please login first"
+                }
+            ), 401
+
+        return fn(
+            *args,
+            **kwargs
+        )
+
+    return wrapper
+
+
+def admin_required(fn):
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+
+        user_id = session.get(
+            "user_id"
+        )
+
+        if not user_id:
+
+            return jsonify(
+                {
+                    "error":
+                        "Please login first"
+                }
+            ), 401
+
+        user = get_user_by_id(
             user_id
         )
-    )
 
-    add_credit_history(
-        user_id,
-        -amount,
-        reason
-    )
+        if not user:
 
-    return True
+            session.clear()
 
+            return jsonify(
+                {
+                    "error":
+                        "User account not found"
+                }
+            ), 401
+
+        username = row_value(
+            user,
+            "username",
+            1,
+            ""
+        )
+
+        is_admin = bool(
+            row_value(
+                user,
+                "is_admin",
+                4,
+                False
+            )
+        )
+
+        if username == ADMIN_USERNAME:
+            is_admin = True
+
+        if not is_admin:
+
+            return jsonify(
+                {
+                    "error":
+                        "Admin access required"
+                }
+            ), 403
+
+        return fn(
+            *args,
+            **kwargs
+        )
+
+    return wrapper
+# ============================================================
+# CREDIT FUNCTIONS
+# ============================================================
 
 def add_credits(
     user_id,
     amount,
+    reason="Credit adjustment"
+):
+
+    placeholder = db_placeholder()
+
+    con = db_connection()
+
+    try:
+
+        cur = con.cursor()
+
+        cur.execute(
+            f"""
+            UPDATE users
+            SET credits = credits + {placeholder}
+            WHERE id = {placeholder}
+            """,
+            (
+                amount,
+                user_id
+            )
+        )
+
+        cur.execute(
+            f"""
+            INSERT INTO credit_history
+            (
+                user_id,
+                amount,
+                reason
+            )
+            VALUES
+            (
+                {placeholder},
+                {placeholder},
+                {placeholder}
+            )
+            """,
+            (
+                user_id,
+                amount,
+                reason
+            )
+        )
+
+        con.commit()
+
+    finally:
+
+        con.close()
+
+
+def use_credits(
+    user_id,
+    amount,
     reason
 ):
 
     placeholder = db_placeholder()
 
-    db_execute(
-        f"""
-        UPDATE users
-        SET credits = credits + {placeholder}
-        WHERE id = {placeholder}
-        """,
-        (
-            amount,
-            user_id
+    con = db_connection()
+
+    try:
+
+        cur = con.cursor()
+
+        cur.execute(
+            f"""
+            UPDATE users
+            SET credits = credits - {placeholder}
+            WHERE id = {placeholder}
+            AND credits >= {placeholder}
+            """,
+            (
+                amount,
+                user_id,
+                amount
+            )
         )
-    )
 
-    add_credit_history(
-        user_id,
-        amount,
-        reason
-    )
+        if cur.rowcount != 1:
+
+            con.rollback()
+
+            return False
+
+        cur.execute(
+            f"""
+            INSERT INTO credit_history
+            (
+                user_id,
+                amount,
+                reason
+            )
+            VALUES
+            (
+                {placeholder},
+                {placeholder},
+                {placeholder}
+            )
+            """,
+            (
+                user_id,
+                -amount,
+                reason
+            )
+        )
+
+        con.commit()
+
+        return True
+
+    except Exception:
+
+        con.rollback()
+
+        raise
+
+    finally:
+
+        con.close()
 
 
-def add_generation_history(
+# ============================================================
+# GENERATION HISTORY
+# ============================================================
+
+def save_generation(
     user_id,
     generation_type,
     prompt,
-    credits,
-    file_url
+    credits
 ):
 
     placeholder = db_placeholder()
@@ -443,11 +660,10 @@ def add_generation_history(
             user_id,
             type,
             prompt,
-            credits,
-            file_url
+            credits
         )
-        VALUES (
-            {placeholder},
+        VALUES
+        (
             {placeholder},
             {placeholder},
             {placeholder},
@@ -458,176 +674,231 @@ def add_generation_history(
             user_id,
             generation_type,
             prompt,
-            credits,
-            file_url
-        )
+            credits
+        ),
+        commit=True
     )
 
 
-# =========================================================
+# ============================================================
 # POLLINATIONS
-# =========================================================
+# ============================================================
+
+def require_pollinations_key():
+
+    if not POLLINATIONS_API_KEY:
+
+        raise RuntimeError(
+            "Pollinations API key is not configured."
+        )
+
 
 def pollinations_headers():
 
-    headers = {
-        "Accept": "*/*"
+    return {
+        "Authorization":
+            "Bearer " +
+            POLLINATIONS_API_KEY,
+
+        "Accept":
+            "*/*"
     }
 
-    if POLLINATIONS_API_KEY:
-        headers["Authorization"] = (
-            "Bearer " + POLLINATIONS_API_KEY
-        )
 
-    return headers
-
-
-def save_generated_file(
-    response,
-    extension
-):
-
-    filename = (
-        uuid.uuid4().hex
-        + "."
-        + extension
-    )
-
-    filepath = os.path.join(
-        GENERATED_DIR,
-        filename
-    )
-
-    with open(filepath, "wb") as file:
-        file.write(response.content)
-
-    return filename
-
-
-# =========================================================
+# ============================================================
 # HOME
-# =========================================================
+# ============================================================
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+
+    return render_template(
+        "index.html"
+    )
 
 
-# =========================================================
+# ============================================================
+# HEALTH
+# ============================================================
+
+@app.route("/health")
+def health():
+
+    return jsonify(
+        {
+            "status": "ok",
+            "database":
+                "postgres"
+                if USE_POSTGRES
+                else "sqlite"
+        }
+    )
+
+
+# ============================================================
 # REGISTER
-# =========================================================
+# ============================================================
 
-@app.route("/register", methods=["POST"])
+@app.route(
+    "/register",
+    methods=["POST"]
+)
 def register():
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
+        data = (
+            request.get_json()
+            or {}
+        )
 
         username = str(
-            data.get("username", "")
+            data.get(
+                "username",
+                ""
+            )
         ).strip()
 
         password = str(
-            data.get("password", "")
+            data.get(
+                "password",
+                ""
+            )
         )
 
         if not username or not password:
-            return jsonify({
-                "error": "Username and password are required."
-            }), 400
+
+            return jsonify(
+                {
+                    "error":
+                        "Username and password are required"
+                }
+            ), 400
 
         if len(username) < 3:
-            return jsonify({
-                "error": "Username must be at least 3 characters."
-            }), 400
 
-        if len(password) < 4:
-            return jsonify({
-                "error": "Password must be at least 4 characters."
-            }), 400
+            return jsonify(
+                {
+                    "error":
+                        "Username must be at least 3 characters"
+                }
+            ), 400
+
+        if len(password) < 6:
+
+            return jsonify(
+                {
+                    "error":
+                        "Password must be at least 6 characters"
+                }
+            ), 400
+
+        if get_user_by_username(
+            username
+        ):
+
+            return jsonify(
+                {
+                    "error":
+                        "Username already exists"
+                }
+            ), 400
+
+        password_hash = (
+            generate_password_hash(
+                password
+            )
+        )
 
         placeholder = db_placeholder()
 
-        existing = db_execute(
-            f"""
-            SELECT id
-            FROM users
-            WHERE username = {placeholder}
-            """,
-            (username,),
-            fetchone=True
+        con = db_connection()
+
+        try:
+
+            cur = con.cursor()
+
+            if USE_POSTGRES:
+
+                cur.execute(
+                    f"""
+                    INSERT INTO users
+                    (
+                        username,
+                        password,
+                        credits,
+                        is_admin,
+                        blocked
+                    )
+                    VALUES
+                    (
+                        {placeholder},
+                        {placeholder},
+                        {placeholder},
+                        {placeholder},
+                        {placeholder}
+                    )
+                    """,
+                    (
+                        username,
+                        password_hash,
+                        NEW_USER_CREDITS,
+                        db_bool(
+                            username ==
+                            ADMIN_USERNAME
+                        ),
+                        db_bool(False)
+                    )
+                )
+
+            else:
+
+                cur.execute(
+                    f"""
+                    INSERT INTO users
+                    (
+                        username,
+                        password,
+                        credits,
+                        is_admin,
+                        blocked
+                    )
+                    VALUES
+                    (
+                        {placeholder},
+                        {placeholder},
+                        {placeholder},
+                        {placeholder},
+                        {placeholder}
+                    )
+                    """,
+                    (
+                        username,
+                        password_hash,
+                        NEW_USER_CREDITS,
+                        1 if
+                        username ==
+                        ADMIN_USERNAME
+                        else 0,
+                        0
+                    )
+                )
+
+            con.commit()
+
+        finally:
+
+            con.close()
+
+        return jsonify(
+            {
+                "message":
+                    "Account created successfully",
+
+                "credits":
+                    NEW_USER_CREDITS
+            }
         )
-
-        if existing:
-            return jsonify({
-                "error": "Username already exists."
-            }), 409
-
-        is_admin = False
-
-        if ADMIN_USERNAME:
-            if username == ADMIN_USERNAME:
-                is_admin = True
-
-        password_hash = generate_password_hash(
-            password
-        )
-
-        db_execute(
-            f"""
-            INSERT INTO users
-            (
-                username,
-                password,
-                credits,
-                is_admin,
-                blocked
-            )
-            VALUES (
-                {placeholder},
-                {placeholder},
-                {placeholder},
-                {placeholder},
-                {placeholder}
-            )
-            """,
-            (
-                username,
-                password_hash,
-                NEW_USER_CREDITS,
-                db_bool(is_admin),
-                db_bool(False)
-            )
-        )
-
-        user = db_execute(
-            f"""
-            SELECT
-                id,
-                username,
-                credits,
-                is_admin
-            FROM users
-            WHERE username = {placeholder}
-            """,
-            (username,),
-            fetchone=True
-        )
-
-        add_credit_history(
-            user["id"],
-            NEW_USER_CREDITS,
-            "Welcome credits"
-        )
-
-        return jsonify({
-            "success": True,
-            "message": "Registration successful.",
-            "username": username
-        })
 
     except Exception as e:
 
@@ -636,97 +907,199 @@ def register():
             repr(e)
         )
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+        return jsonify(
+            {
+                "error":
+                    str(e)
+            }
+        ), 500
 
 
-# =========================================================
+# ============================================================
 # LOGIN
-# =========================================================
+# ============================================================
 
-@app.route("/login", methods=["POST"])
+@app.route(
+    "/login",
+    methods=["POST"]
+)
 def login():
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
+        data = (
+            request.get_json()
+            or {}
+        )
 
         username = str(
-            data.get("username", "")
+            data.get(
+                "username",
+                ""
+            )
         ).strip()
 
         password = str(
-            data.get("password", "")
+            data.get(
+                "password",
+                ""
+            )
         )
 
         if not username or not password:
-            return jsonify({
-                "error": "Username and password are required."
-            }), 400
 
-        placeholder = db_placeholder()
+            return jsonify(
+                {
+                    "error":
+                        "Username and password are required"
+                }
+            ), 400
 
-        user = db_execute(
-            f"""
-            SELECT *
-            FROM users
-            WHERE username = {placeholder}
-            """,
-            (username,),
-            fetchone=True
+        user = get_user_by_username(
+            username
         )
 
         if not user:
-            return jsonify({
-                "error": "Invalid username or password."
-            }), 401
 
-        if user["blocked"]:
-            return jsonify({
-                "error": "Your account is blocked."
-            }), 403
+            return jsonify(
+                {
+                    "error":
+                        "Username or password is incorrect"
+                }
+            ), 401
+
+        user_id = row_value(
+            user,
+            "id",
+            0
+        )
+
+        stored_password = row_value(
+            user,
+            "password",
+            2,
+            ""
+        )
 
         if not check_password_hash(
-            user["password"],
+            stored_password,
             password
         ):
-            return jsonify({
-                "error": "Invalid username or password."
-            }), 401
 
-        if (
-            ADMIN_USERNAME
-            and username == ADMIN_USERNAME
-            and not user["is_admin"]
-        ):
+            return jsonify(
+                {
+                    "error":
+                        "Username or password is incorrect"
+                }
+            ), 401
+
+        is_admin = bool(
+            row_value(
+                user,
+                "is_admin",
+                4,
+                False
+            )
+        )
+
+        blocked = bool(
+            row_value(
+                user,
+                "blocked",
+                5,
+                False
+            )
+        )
+
+        # Configured admin is always admin
+        # and cannot remain blocked.
+
+        if username == ADMIN_USERNAME:
+
+            is_admin = True
+            blocked = False
+
+            placeholder = db_placeholder()
 
             db_execute(
                 f"""
                 UPDATE users
-                SET is_admin = {placeholder}
-                WHERE id = {placeholder}
+                SET
+                    is_admin =
+                        {placeholder},
+                    blocked =
+                        {placeholder}
+                WHERE id =
+                    {placeholder}
                 """,
                 (
                     db_bool(True),
-                    user["id"]
-                )
+                    db_bool(False),
+                    user_id
+                ),
+                commit=True
             )
 
-            user["is_admin"] = db_bool(True)
+        if blocked:
+
+            return jsonify(
+                {
+                    "error":
+                        "Your account is blocked."
+                }
+            ), 403
+
+        # ----------------------------------------------------
+        # IMPORTANT SESSION FIX
+        # ----------------------------------------------------
 
         session.clear()
 
-        session["user_id"] = user["id"]
+        session.permanent = True
 
-        return jsonify({
-            "success": True,
-            "username": user["username"],
-            "credits": int(user["credits"]),
-            "is_admin": bool(user["is_admin"])
-        })
+        session["user_id"] = int(
+            user_id
+        )
+
+        session["username"] = username
+
+        session["is_admin"] = bool(
+            is_admin
+        )
+
+        session.modified = True
+
+        credits = get_credits(
+            user_id
+        )
+
+        print(
+            "LOGIN SUCCESS:",
+            username,
+            "USER_ID:",
+            user_id,
+            "ADMIN:",
+            is_admin
+        )
+
+        return jsonify(
+            {
+                "message":
+                    "Login successful",
+
+                "logged_in":
+                    True,
+
+                "username":
+                    username,
+
+                "credits":
+                    credits,
+
+                "is_admin":
+                    is_admin
+            }
+        )
 
     except Exception as e:
 
@@ -735,104 +1108,223 @@ def login():
             repr(e)
         )
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+        return jsonify(
+            {
+                "error":
+                    str(e)
+            }
+        ), 500
 
 
-# =========================================================
+# ============================================================
+# CURRENT USER
+# ============================================================
+
+@app.route("/me")
+def me():
+
+    user_id = session.get(
+        "user_id"
+    )
+
+    if not user_id:
+
+        return jsonify(
+            {
+                "logged_in":
+                    False
+            }
+        )
+
+    user = get_user_by_id(
+        user_id
+    )
+
+    if not user:
+
+        session.clear()
+
+        return jsonify(
+            {
+                "logged_in":
+                    False
+            }
+        )
+
+    username = row_value(
+        user,
+        "username",
+        1,
+        ""
+    )
+
+    blocked = bool(
+        row_value(
+            user,
+            "blocked",
+            5,
+            False
+        )
+    )
+
+    if blocked:
+
+        session.clear()
+
+        return jsonify(
+            {
+                "logged_in":
+                    False,
+
+                "error":
+                    "Your account is blocked."
+            }
+        ), 403
+
+    is_admin = bool(
+        row_value(
+            user,
+            "is_admin",
+            4,
+            False
+        )
+    )
+
+    if username == ADMIN_USERNAME:
+
+        is_admin = True
+
+    return jsonify(
+        {
+            "logged_in":
+                True,
+
+            "username":
+                username,
+
+            "credits":
+                get_credits(
+                    user_id
+                ),
+
+            "is_admin":
+                is_admin
+        }
+    )
+
+
+# ============================================================
 # LOGOUT
-# =========================================================
+# ============================================================
 
-@app.route("/logout", methods=["POST"])
+@app.route(
+    "/logout",
+    methods=["POST"]
+)
 def logout():
+
+    username = session.get(
+        "username"
+    )
 
     session.clear()
 
-    return jsonify({
-        "success": True
-    })
+    print(
+        "LOGOUT:",
+        username
+    )
 
-
-# =========================================================
-# ME
-# =========================================================
-
-@app.route("/me")
-@login_required
-def me():
-
-    user = current_user()
-
-    return jsonify({
-        "success": True,
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "credits": int(user["credits"]),
-            "is_admin": bool(user["is_admin"]),
-            "blocked": bool(user["blocked"]),
-            "created_at": str(
-                user["created_at"]
-            )
+    return jsonify(
+        {
+            "message":
+                "Logged out successfully"
         }
-    })
+    )
 
 
-# =========================================================
+# ============================================================
 # CREDITS
-# =========================================================
+# ============================================================
 
 @app.route("/credits")
 @login_required
 def credits():
 
-    user = current_user()
-
-    return jsonify({
-        "credits": int(user["credits"])
-    })
-    # =========================================================
+    return jsonify(
+        {
+            "credits":
+                get_credits(
+                    session["user_id"]
+                )
+        }
+    )
+# ============================================================
 # IMAGE GENERATION
-# =========================================================
+# ============================================================
 
-@app.route("/generate", methods=["POST"])
+@app.route(
+    "/generate",
+    methods=["POST"]
+)
 @login_required
 def generate_image():
 
-    user = current_user()
+    user_id = session[
+        "user_id"
+    ]
+
+    data = (
+        request.get_json()
+        or {}
+    )
+
+    prompt = str(
+        data.get(
+            "prompt",
+            ""
+        )
+    ).strip()
+
+    if not prompt:
+
+        return jsonify(
+            {
+                "error":
+                    "Please enter a prompt"
+            }
+        ), 400
+
+    if get_credits(
+        user_id
+    ) < IMAGE_COST:
+
+        return jsonify(
+            {
+                "error":
+                    "Your credits are finished. Please recharge to continue."
+            }
+        ), 402
+
     charged = False
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
+        require_pollinations_key()
 
-        prompt = str(
-            data.get("prompt", "")
-        ).strip()
-
-        if not prompt:
-            return jsonify({
-                "error": "Please enter a prompt."
-            }), 400
-
-        if not POLLINATIONS_API_KEY:
-            return jsonify({
-                "error": "Pollinations API key is not configured."
-            }), 500
-
-        if not deduct_credits(
-            user["id"],
+        charged = use_credits(
+            user_id,
             IMAGE_COST,
-            "Image generation"
-        ):
-            return jsonify({
-                "error": "Not enough credits."
-            }), 402
+            "AI image generation"
+        )
 
-        charged = True
+        if not charged:
+
+            return jsonify(
+                {
+                    "error":
+                        "Not enough credits"
+                }
+            ), 402
 
         encoded_prompt = quote(
             prompt,
@@ -840,98 +1332,105 @@ def generate_image():
         )
 
         url = (
-            f"{POLLINATIONS_BASE}/image/"
-            f"{encoded_prompt}"
+            POLLINATIONS_BASE +
+            "/image/" +
+            encoded_prompt
         )
 
         params = {
-            "model": "black-forest-labs/flux.1-schnell",
-            "width": 1024,
-            "height": 1024,
-            "nologo": "true"
+            "model":
+                "black-forest-labs/flux.1-schnell",
+
+            "width":
+                1024,
+
+            "height":
+                1024,
+
+            "n":
+                1
         }
 
         response = requests.get(
             url,
             params=params,
-            headers=pollinations_headers(),
-            timeout=180
+            headers=
+                pollinations_headers(),
+            timeout=300
+        )
+
+        print(
+            "IMAGE STATUS:",
+            response.status_code
         )
 
         if response.status_code != 200:
 
-            add_credits(
-                user["id"],
-                IMAGE_COST,
-                "Image generation refund"
+            raise RuntimeError(
+                "Image API error: HTTP " +
+                str(
+                    response.status_code
+                ) +
+                " - " +
+                response.text[:500]
             )
 
-            charged = False
+        content_type = (
+            response.headers.get(
+                "Content-Type",
+                ""
+            )
+        )
 
-            return jsonify({
-                "error": (
-                    "Image API error: "
-                    + str(response.status_code)
-                    + " "
-                    + response.text[:500]
-                )
-            }), 502
+        if not content_type.startswith(
+            "image/"
+        ):
 
-        if not response.content:
-
-            add_credits(
-                user["id"],
-                IMAGE_COST,
-                "Image generation refund"
+            raise RuntimeError(
+                "Image API did not return an image."
             )
 
-            charged = False
-
-            return jsonify({
-                "error": "Image response was empty."
-            }), 502
-
-        content_type = response.headers.get(
-            "Content-Type",
-            ""
-        ).lower()
-
-        extension = "png"
-
-        if "jpeg" in content_type:
-            extension = "jpg"
-
-        elif "jpg" in content_type:
-            extension = "jpg"
-
-        elif "webp" in content_type:
-            extension = "webp"
-
-        filename = save_generated_file(
-            response,
-            extension
+        filename = (
+            "image_" +
+            uuid.uuid4().hex +
+            ".png"
         )
 
-        image_url = (
-            "/generated/"
-            + filename
+        filepath = os.path.join(
+            GENERATED_DIR,
+            filename
         )
 
-        add_generation_history(
-            user["id"],
+        with open(
+            filepath,
+            "wb"
+        ) as f:
+
+            f.write(
+                response.content
+            )
+
+        save_generation(
+            user_id,
             "image",
             prompt,
-            IMAGE_COST,
-            image_url
+            IMAGE_COST
         )
 
-        return jsonify({
-            "success": True,
-            "image_url": image_url,
-            "credits": get_user_credits(
-                user["id"]
-            )
-        })
+        charged = False
+
+        return jsonify(
+            {
+                "image_url":
+                    "/generated/" +
+                    filename,
+
+                "credits":
+                    get_credits(
+                        user_id
+                    )
+            }
+        )
 
     except Exception as e:
 
@@ -943,60 +1442,97 @@ def generate_image():
         if charged:
 
             try:
+
                 add_credits(
-                    user["id"],
+                    user_id,
                     IMAGE_COST,
-                    "Image generation error refund"
+                    "Image generation failed - refund"
                 )
-            except Exception:
-                pass
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+            except Exception as refund_error:
+
+                print(
+                    "IMAGE REFUND ERROR:",
+                    repr(
+                        refund_error
+                    )
+                )
+
+        return jsonify(
+            {
+                "error":
+                    str(e)
+            }
+        ), 500
 
 
-# =========================================================
+# ============================================================
 # AUDIO GENERATION
-# =========================================================
+# ============================================================
 
-@app.route("/audio", methods=["POST"])
+@app.route(
+    "/audio",
+    methods=["POST"]
+)
 @login_required
 def generate_audio():
 
-    user = current_user()
+    user_id = session[
+        "user_id"
+    ]
+
+    data = (
+        request.get_json()
+        or {}
+    )
+
+    text = str(
+        data.get(
+            "text",
+            ""
+        )
+    ).strip()
+
+    if not text:
+
+        return jsonify(
+            {
+                "error":
+                    "Please enter text"
+            }
+        ), 400
+
+    if get_credits(
+        user_id
+    ) < AUDIO_COST:
+
+        return jsonify(
+            {
+                "error":
+                    "Your credits are finished. Please recharge to continue."
+            }
+        ), 402
+
     charged = False
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
+        require_pollinations_key()
 
-        text = str(
-            data.get("text", "")
-        ).strip()
-
-        if not text:
-            return jsonify({
-                "error": "Please enter text."
-            }), 400
-
-        if not POLLINATIONS_API_KEY:
-            return jsonify({
-                "error": "Pollinations API key is not configured."
-            }), 500
-
-        if not deduct_credits(
-            user["id"],
+        charged = use_credits(
+            user_id,
             AUDIO_COST,
-            "Audio generation"
-        ):
-            return jsonify({
-                "error": "Not enough credits."
-            }), 402
+            "AI audio generation"
+        )
 
-        charged = True
+        if not charged:
+
+            return jsonify(
+                {
+                    "error":
+                        "Not enough credits"
+                }
+            ), 402
 
         encoded_text = quote(
             text,
@@ -1004,79 +1540,81 @@ def generate_audio():
         )
 
         url = (
-            f"{POLLINATIONS_BASE}/audio/"
-            f"{encoded_text}"
+            POLLINATIONS_BASE +
+            "/audio/" +
+            encoded_text
         )
 
         params = {
-            "voice": "nova"
+            "voice":
+                "nova"
         }
 
         response = requests.get(
             url,
             params=params,
-            headers=pollinations_headers(),
-            timeout=180
+            headers=
+                pollinations_headers(),
+            timeout=300
+        )
+
+        print(
+            "AUDIO STATUS:",
+            response.status_code
         )
 
         if response.status_code != 200:
 
-            add_credits(
-                user["id"],
-                AUDIO_COST,
-                "Audio generation refund"
+            raise RuntimeError(
+                "Audio API error: HTTP " +
+                str(
+                    response.status_code
+                ) +
+                " - " +
+                response.text[:500]
             )
 
-            charged = False
+        filename = (
+            "audio_" +
+            uuid.uuid4().hex +
+            ".mp3"
+        )
 
-            return jsonify({
-                "error": (
-                    "Audio API error: "
-                    + str(response.status_code)
-                    + " "
-                    + response.text[:500]
-                )
-            }), 502
+        filepath = os.path.join(
+            GENERATED_DIR,
+            filename
+        )
 
-        if not response.content:
+        with open(
+            filepath,
+            "wb"
+        ) as f:
 
-            add_credits(
-                user["id"],
-                AUDIO_COST,
-                "Audio generation refund"
+            f.write(
+                response.content
             )
 
-            charged = False
-
-            return jsonify({
-                "error": "Audio response was empty."
-            }), 502
-
-        filename = save_generated_file(
-            response,
-            "mp3"
-        )
-
-        audio_url = (
-            "/generated/"
-            + filename
-        )
-
-        add_generation_history(
-            user["id"],
+        save_generation(
+            user_id,
             "audio",
             text,
-            AUDIO_COST,
-            audio_url
+            AUDIO_COST
         )
 
-        return jsonify({
-            "success": True,
-            "audio_url": audio_url,
-            "credits": get_user_credits(
-                user["id"]
-            )
-        })
+        charged = False
+
+        return jsonify(
+            {
+                "audio_url":
+                    "/generated/" +
+                    filename,
+
+                "credits":
+                    get_credits(
+                        user_id
+                    )
+            }
+        )
 
     except Exception as e:
 
@@ -1088,60 +1626,97 @@ def generate_audio():
         if charged:
 
             try:
+
                 add_credits(
-                    user["id"],
+                    user_id,
                     AUDIO_COST,
-                    "Audio generation error refund"
+                    "Audio generation failed - refund"
                 )
-            except Exception:
-                pass
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+            except Exception as refund_error:
+
+                print(
+                    "AUDIO REFUND ERROR:",
+                    repr(
+                        refund_error
+                    )
+                )
+
+        return jsonify(
+            {
+                "error":
+                    str(e)
+            }
+        ), 500
 
 
-# =========================================================
+# ============================================================
 # VIDEO GENERATION
-# =========================================================
+# ============================================================
 
-@app.route("/video", methods=["POST"])
+@app.route(
+    "/video",
+    methods=["POST"]
+)
 @login_required
 def generate_video():
 
-    user = current_user()
+    user_id = session[
+        "user_id"
+    ]
+
+    data = (
+        request.get_json()
+        or {}
+    )
+
+    prompt = str(
+        data.get(
+            "prompt",
+            ""
+        )
+    ).strip()
+
+    if not prompt:
+
+        return jsonify(
+            {
+                "error":
+                    "Please enter a prompt"
+            }
+        ), 400
+
+    if get_credits(
+        user_id
+    ) < VIDEO_COST:
+
+        return jsonify(
+            {
+                "error":
+                    "Your credits are finished. Please recharge to continue."
+            }
+        ), 402
+
     charged = False
 
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
+        require_pollinations_key()
 
-        prompt = str(
-            data.get("prompt", "")
-        ).strip()
-
-        if not prompt:
-            return jsonify({
-                "error": "Please enter a prompt."
-            }), 400
-
-        if not POLLINATIONS_API_KEY:
-            return jsonify({
-                "error": "Pollinations API key is not configured."
-            }), 500
-
-        if not deduct_credits(
-            user["id"],
+        charged = use_credits(
+            user_id,
             VIDEO_COST,
-            "Video generation"
-        ):
-            return jsonify({
-                "error": "Not enough credits."
-            }), 402
+            "AI video generation"
+        )
 
-        charged = True
+        if not charged:
+
+            return jsonify(
+                {
+                    "error":
+                        "Not enough credits"
+                }
+            ), 402
 
         encoded_prompt = quote(
             prompt,
@@ -1149,82 +1724,105 @@ def generate_video():
         )
 
         url = (
-            f"{POLLINATIONS_BASE}/video/"
-            f"{encoded_prompt}"
+            POLLINATIONS_BASE +
+            "/video/" +
+            encoded_prompt
         )
 
         params = {
-            "model": "google/veo-3.1-fast",
-            "duration": 4,
-            "aspectRatio": "16:9",
-            "audio": "false"
+            "model":
+                "google/veo-3.1-fast",
+
+            "duration":
+                4,
+
+            "aspectRatio":
+                "16:9",
+
+            "audio":
+                "false"
         }
 
         response = requests.get(
             url,
             params=params,
-            headers=pollinations_headers(),
+            headers=
+                pollinations_headers(),
             timeout=600
+        )
+
+        print(
+            "VIDEO STATUS:",
+            response.status_code
         )
 
         if response.status_code != 200:
 
-            add_credits(
-                user["id"],
-                VIDEO_COST,
-                "Video generation refund"
+            raise RuntimeError(
+                "Video API error: HTTP " +
+                str(
+                    response.status_code
+                ) +
+                " - " +
+                response.text[:500]
             )
 
-            charged = False
+        content_type = (
+            response.headers.get(
+                "Content-Type",
+                ""
+            )
+        )
 
-            return jsonify({
-                "error": (
-                    "Video API error: "
-                    + str(response.status_code)
-                    + " "
-                    + response.text[:500]
-                )
-            }), 502
+        if "video" not in (
+            content_type.lower()
+        ):
 
-        if not response.content:
-
-            add_credits(
-                user["id"],
-                VIDEO_COST,
-                "Video generation refund"
+            raise RuntimeError(
+                "Video API did not return a video."
             )
 
-            charged = False
-
-            return jsonify({
-                "error": "Video response was empty."
-            }), 502
-
-        filename = save_generated_file(
-            response,
-            "mp4"
+        filename = (
+            "video_" +
+            uuid.uuid4().hex +
+            ".mp4"
         )
 
-        video_url = (
-            "/generated/"
-            + filename
+        filepath = os.path.join(
+            GENERATED_DIR,
+            filename
         )
 
-        add_generation_history(
-            user["id"],
+        with open(
+            filepath,
+            "wb"
+        ) as f:
+
+            f.write(
+                response.content
+            )
+
+        save_generation(
+            user_id,
             "video",
             prompt,
-            VIDEO_COST,
-            video_url
+            VIDEO_COST
         )
 
-        return jsonify({
-            "success": True,
-            "video_url": video_url,
-            "credits": get_user_credits(
-                user["id"]
-            )
-        })
+        charged = False
+
+        return jsonify(
+            {
+                "video_url":
+                    "/generated/" +
+                    filename,
+
+                "credits":
+                    get_credits(
+                        user_id
+                    )
+            }
+        )
 
     except Exception as e:
 
@@ -1236,41 +1834,75 @@ def generate_video():
         if charged:
 
             try:
+
                 add_credits(
-                    user["id"],
+                    user_id,
                     VIDEO_COST,
-                    "Video generation error refund"
+                    "Video generation failed - refund"
                 )
-            except Exception:
-                pass
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+            except Exception as refund_error:
+
+                print(
+                    "VIDEO REFUND ERROR:",
+                    repr(
+                        refund_error
+                    )
+                )
+
+        return jsonify(
+            {
+                "error":
+                    str(e)
+            }
+        ), 500
 
 
-# =========================================================
+# ============================================================
 # GENERATED FILES
-# =========================================================
+# ============================================================
 
-@app.route("/generated/<path:filename>")
+@app.route(
+    "/generated/<path:filename>"
+)
 def generated_file(filename):
 
-    return send_from_directory(
-        GENERATED_DIR,
+    safe_name = os.path.basename(
         filename
     )
 
+    filepath = os.path.join(
+        GENERATED_DIR,
+        safe_name
+    )
 
-# =========================================================
+    if not os.path.isfile(
+        filepath
+    ):
+
+        return jsonify(
+            {
+                "error":
+                    "Generated file not found"
+            }
+        ), 404
+
+    return send_file(
+        filepath
+    )
+
+
+# ============================================================
 # USER HISTORY
-# =========================================================
+# ============================================================
 
 @app.route("/history")
 @login_required
 def user_history():
 
-    user = current_user()
+    user_id = session[
+        "user_id"
+    ]
 
     placeholder = db_placeholder()
 
@@ -1280,41 +1912,194 @@ def user_history():
             type,
             prompt,
             credits,
-            file_url,
             created_at
         FROM generation_history
-        WHERE user_id = {placeholder}
+        WHERE user_id =
+            {placeholder}
         ORDER BY id DESC
         LIMIT 100
         """,
-        (user["id"],),
+        (
+            user_id,
+        ),
         fetchall=True
     )
 
     history = []
 
-    for row in rows:
+    for row in rows or []:
 
-        history.append({
-            "type": row["type"],
-            "prompt": row["prompt"],
-            "credits": int(row["credits"]),
-            "file_url": row["file_url"],
-            "created_at": str(
-                row["created_at"]
+        history.append(
+            {
+                "type":
+                    row_value(
+                        row,
+                        "type",
+                        0,
+                        ""
+                    ),
+
+                "prompt":
+                    row_value(
+                        row,
+                        "prompt",
+                        1,
+                        ""
+                    ),
+
+                "credits":
+                    row_value(
+                        row,
+                        "credits",
+                        2,
+                        0
+                    ),
+
+                "created_at":
+                    str(
+                        row_value(
+                            row,
+                            "created_at",
+                            3,
+                            ""
+                        )
+                    )
+            }
+        )
+
+    return jsonify(
+        {
+            "history":
+                history
+        }
+    )
+# ============================================================
+# ADMIN STATS
+# ============================================================
+
+@app.route(
+    "/admin/stats"
+)
+@admin_required
+def admin_stats():
+
+    con = db_connection()
+
+    try:
+
+        cur = con.cursor()
+
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM users"
+        )
+
+        total_users = cur.fetchone()
+
+        cur.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM generation_history
+            """
+        )
+
+        total_generations = (
+            cur.fetchone()
+        )
+
+        cur.execute(
+            """
+            SELECT COALESCE(
+                SUM(credits),
+                0
+            ) AS total
+            FROM users
+            """
+        )
+
+        total_credits = (
+            cur.fetchone()
+        )
+
+        if USE_POSTGRES:
+
+            cur.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM users
+                WHERE blocked = TRUE
+                """
             )
-        })
 
-    return jsonify({
-        "history": history
-    })
+        else:
+
+            cur.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM users
+                WHERE blocked = 1
+                """
+            )
+
+        blocked_users = (
+            cur.fetchone()
+        )
+
+    finally:
+
+        con.close()
+
+    return jsonify(
+        {
+            "total_users":
+                int(
+                    row_value(
+                        total_users,
+                        "total",
+                        0,
+                        0
+                    )
+                ),
+
+            "total_generations":
+                int(
+                    row_value(
+                        total_generations,
+                        "total",
+                        0,
+                        0
+                    )
+                ),
+
+            "total_credits":
+                int(
+                    row_value(
+                        total_credits,
+                        "total",
+                        0,
+                        0
+                    )
+                ),
+
+            "blocked_users":
+                int(
+                    row_value(
+                        blocked_users,
+                        "total",
+                        0,
+                        0
+                    )
+                )
+        }
+    )
 
 
-# =========================================================
-# ADMIN - USERS
-# =========================================================
+# ============================================================
+# ADMIN USERS
+# ============================================================
 
-@app.route("/admin/users")
+@app.route(
+    "/admin/users"
+)
 @admin_required
 def admin_users():
 
@@ -1335,198 +2120,298 @@ def admin_users():
 
     users = []
 
-    for row in rows:
+    for row in rows or []:
 
-        users.append({
-            "id": row["id"],
-            "username": row["username"],
-            "credits": int(row["credits"]),
-            "is_admin": bool(row["is_admin"]),
-            "blocked": bool(row["blocked"]),
-            "created_at": str(
-                row["created_at"]
-            )
-        })
+        users.append(
+            {
+                "id":
+                    row_value(
+                        row,
+                        "id",
+                        0
+                    ),
 
-    return jsonify({
-        "users": users
-    })
+                "username":
+                    row_value(
+                        row,
+                        "username",
+                        1,
+                        ""
+                    ),
+
+                "credits":
+                    row_value(
+                        row,
+                        "credits",
+                        2,
+                        0
+                    ),
+
+                "is_admin":
+                    bool(
+                        row_value(
+                            row,
+                            "is_admin",
+                            3,
+                            False
+                        )
+                    ),
+
+                "blocked":
+                    bool(
+                        row_value(
+                            row,
+                            "blocked",
+                            4,
+                            False
+                        )
+                    ),
+
+                "created_at":
+                    str(
+                        row_value(
+                            row,
+                            "created_at",
+                            5,
+                            ""
+                        )
+                    )
+            }
+        )
+
+    return jsonify(
+        {
+            "users":
+                users
+        }
+    )
 
 
-# =========================================================
-# ADMIN - CREDIT ADJUSTMENT
-# =========================================================
+# ============================================================
+# ADMIN CREDIT ADJUSTMENT
+# ============================================================
 
-@app.route("/admin/credits", methods=["POST"])
+@app.route(
+    "/admin/credits",
+    methods=["POST"]
+)
 @admin_required
-def admin_adjust_credits():
+def admin_credits():
+
+    data = (
+        request.get_json()
+        or {}
+    )
+
+    username = str(
+        data.get(
+            "username",
+            ""
+        )
+    ).strip()
 
     try:
-
-        data = request.get_json(
-            silent=True
-        ) or {}
-
-        user_id = int(
-            data.get("user_id")
-        )
 
         amount = int(
-            data.get("amount")
-        )
-
-        reason = str(
             data.get(
-                "reason",
-                "Admin credit adjustment"
+                "amount",
+                0
             )
-        ).strip()
-
-        if amount == 0:
-            return jsonify({
-                "error": "Amount cannot be zero."
-            }), 400
-
-        placeholder = db_placeholder()
-
-        user = db_execute(
-            f"""
-            SELECT id, username
-            FROM users
-            WHERE id = {placeholder}
-            """,
-            (user_id,),
-            fetchone=True
         )
 
-        if not user:
-            return jsonify({
-                "error": "User not found."
-            }), 404
+    except Exception:
 
-        if amount > 0:
+        amount = 0
 
-            add_credits(
-                user_id,
-                amount,
-                reason
-            )
+    if not username:
 
-        else:
+        return jsonify(
+            {
+                "error":
+                    "Username is required"
+            }
+        ), 400
 
-            remove_amount = abs(amount)
+    if amount == 0:
 
-            current = get_user_credits(
-                user_id
-            )
+        return jsonify(
+            {
+                "error":
+                    "Amount cannot be zero"
+            }
+        ), 400
 
-            if current < remove_amount:
-                return jsonify({
-                    "error": "User does not have enough credits."
-                }), 400
+    user = get_user_by_username(
+        username
+    )
 
-            db_execute(
-                f"""
-                UPDATE users
-                SET credits = credits - {placeholder}
-                WHERE id = {placeholder}
-                """,
-                (
-                    remove_amount,
+    if not user:
+
+        return jsonify(
+            {
+                "error":
+                    "User not found"
+            }
+        ), 404
+
+    user_id = row_value(
+        user,
+        "id",
+        0
+    )
+
+    if amount < 0:
+
+        current = get_credits(
+            user_id
+        )
+
+        if current + amount < 0:
+
+            return jsonify(
+                {
+                    "error":
+                        "User cannot have negative credits"
+                }
+            ), 400
+
+    add_credits(
+        user_id,
+        amount,
+        "Admin credit adjustment"
+    )
+
+    return jsonify(
+        {
+            "message":
+                "Credits updated successfully",
+
+            "credits":
+                get_credits(
                     user_id
                 )
-            )
+        }
+    )
 
-            add_credit_history(
-                user_id,
-                -remove_amount,
-                reason
-            )
 
-        return jsonify({
-            "success": True,
-            "credits": get_user_credits(
-                user_id
-            )
-        })
+# ============================================================
+# ADMIN BLOCK / UNBLOCK
+# ============================================================
 
-    except Exception as e:
-
-        print(
-            "ADMIN CREDIT ERROR:",
-            repr(e)
-        )
-
-        return jsonify({
-            "error": str(e)
-        }), 500
-        # =========================================================
-# ADMIN - BLOCK / UNBLOCK
-# =========================================================
-
-@app.route("/admin/block", methods=["POST"])
+@app.route(
+    "/admin/block",
+    methods=["POST"]
+)
 @admin_required
-def admin_block_user():
+def admin_block():
+
+    data = (
+        request.get_json()
+        or {}
+    )
 
     try:
-        data = request.get_json(silent=True) or {}
 
-        user_id = int(data.get("user_id"))
-        blocked = bool(data.get("blocked"))
-
-        placeholder = db_placeholder()
-
-        db_execute(
-            f"""
-            UPDATE users
-            SET blocked = {placeholder}
-            WHERE id = {placeholder}
-            """,
-            (
-                db_bool(blocked),
-                user_id
+        user_id = int(
+            data.get(
+                "user_id"
             )
         )
 
-        return jsonify({
-            "success": True,
-            "blocked": blocked
-        })
+    except Exception:
 
-    except Exception as e:
+        return jsonify(
+            {
+                "error":
+                    "Invalid user ID"
+            }
+        ), 400
 
-        print(
-            "ADMIN BLOCK ERROR:",
-            repr(e)
+    blocked = bool(
+        data.get(
+            "blocked",
+            False
         )
+    )
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+    user = get_user_by_id(
+        user_id
+    )
+
+    if not user:
+
+        return jsonify(
+            {
+                "error":
+                    "User not found"
+            }
+        ), 404
+
+    username = row_value(
+        user,
+        "username",
+        1,
+        ""
+    )
+
+    if username == ADMIN_USERNAME:
+
+        blocked = False
+
+    placeholder = db_placeholder()
+
+    db_execute(
+        f"""
+        UPDATE users
+        SET blocked =
+            {placeholder}
+        WHERE id =
+            {placeholder}
+        """,
+        (
+            db_bool(
+                blocked
+            ),
+            user_id
+        ),
+        commit=True
+    )
+
+    return jsonify(
+        {
+            "message":
+                "User status updated",
+
+            "blocked":
+                blocked
+        }
+    )
 
 
-# =========================================================
-# ADMIN - GENERATIONS
-# =========================================================
+# ============================================================
+# ADMIN GENERATION HISTORY
+# ============================================================
 
-@app.route("/admin/generations")
+@app.route(
+    "/admin/generations"
+)
 @admin_required
 def admin_generations():
 
     rows = db_execute(
         """
         SELECT
-            g.id,
-            g.type,
-            g.prompt,
-            g.credits,
-            g.file_url,
-            g.created_at,
-            u.username
-        FROM generation_history g
-        LEFT JOIN users u
-            ON u.id = g.user_id
-        ORDER BY g.id DESC
+            generation_history.type,
+            generation_history.prompt,
+            generation_history.credits,
+            generation_history.created_at,
+            users.username
+        FROM generation_history
+        JOIN users
+            ON users.id =
+               generation_history.user_id
+        ORDER BY
+            generation_history.id DESC
         LIMIT 500
         """,
         fetchall=True
@@ -1534,48 +2419,85 @@ def admin_generations():
 
     generations = []
 
-    for row in rows:
+    for row in rows or []:
 
-        generations.append({
-            "id": row["id"],
-            "username": (
-                row["username"]
-                or "Unknown"
-            ),
-            "type": row["type"],
-            "prompt": row["prompt"],
-            "credits": int(row["credits"]),
-            "file_url": row["file_url"],
-            "created_at": str(
-                row["created_at"]
-            )
-        })
+        generations.append(
+            {
+                "username":
+                    row_value(
+                        row,
+                        "username",
+                        4,
+                        ""
+                    ),
 
-    return jsonify({
-        "generations": generations
-    })
+                "type":
+                    row_value(
+                        row,
+                        "type",
+                        0,
+                        ""
+                    ),
+
+                "prompt":
+                    row_value(
+                        row,
+                        "prompt",
+                        1,
+                        ""
+                    ),
+
+                "credits":
+                    row_value(
+                        row,
+                        "credits",
+                        2,
+                        0
+                    ),
+
+                "created_at":
+                    str(
+                        row_value(
+                            row,
+                            "created_at",
+                            3,
+                            ""
+                        )
+                    )
+            }
+        )
+
+    return jsonify(
+        {
+            "generations":
+                generations
+        }
+    )
 
 
-# =========================================================
-# ADMIN - CREDIT HISTORY
-# =========================================================
+# ============================================================
+# ADMIN CREDIT HISTORY
+# ============================================================
 
-@app.route("/admin/credits/history")
+@app.route(
+    "/admin/credits/history"
+)
 @admin_required
 def admin_credit_history():
 
     rows = db_execute(
         """
         SELECT
-            c.id,
-            c.amount,
-            c.reason,
-            c.created_at,
-            u.username
-        FROM credit_history c
-        LEFT JOIN users u
-            ON u.id = c.user_id
-        ORDER BY c.id DESC
+            credit_history.amount,
+            credit_history.reason,
+            credit_history.created_at,
+            users.username
+        FROM credit_history
+        JOIN users
+            ON users.id =
+               credit_history.user_id
+        ORDER BY
+            credit_history.id DESC
         LIMIT 500
         """,
         fetchall=True
@@ -1583,124 +2505,184 @@ def admin_credit_history():
 
     history = []
 
-    for row in rows:
+    for row in rows or []:
 
-        history.append({
-            "id": row["id"],
-            "username": (
-                row["username"]
-                or "Unknown"
-            ),
-            "amount": int(row["amount"]),
-            "reason": row["reason"],
-            "created_at": str(
-                row["created_at"]
-            )
-        })
+        history.append(
+            {
+                "username":
+                    row_value(
+                        row,
+                        "username",
+                        3,
+                        ""
+                    ),
 
-    return jsonify({
-        "history": history
-    })
-    # =========================================================
-# ADMIN - STATS
-# =========================================================
+                "amount":
+                    row_value(
+                        row,
+                        "amount",
+                        0,
+                        0
+                    ),
 
-@app.route("/admin/stats")
-@admin_required
-def admin_stats():
+                "reason":
+                    row_value(
+                        row,
+                        "reason",
+                        1,
+                        ""
+                    ),
 
-    user_count = db_execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM users
-        """,
-        fetchone=True
-    )
-
-    generation_count = db_execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM generation_history
-        """,
-        fetchone=True
-    )
-
-    total_credits = db_execute(
-        """
-        SELECT COALESCE(
-            SUM(credits),
-            0
-        ) AS total
-        FROM users
-        """,
-        fetchone=True
-    )
-
-    image_count = db_execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM generation_history
-        WHERE type = 'image'
-        """,
-        fetchone=True
-    )
-
-    video_count = db_execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM generation_history
-        WHERE type = 'video'
-        """,
-        fetchone=True
-    )
-
-    audio_count = db_execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM generation_history
-        WHERE type = 'audio'
-        """,
-        fetchone=True
-    )
-
-    return jsonify({
-        "users": int(
-            user_count["count"]
-        ),
-        "generations": int(
-            generation_count["count"]
-        ),
-        "total_credits": int(
-            total_credits["total"]
-        ),
-        "images": int(
-            image_count["count"]
-        ),
-        "videos": int(
-            video_count["count"]
-        ),
-        "audio": int(
-            audio_count["count"]
+                "created_at":
+                    str(
+                        row_value(
+                            row,
+                            "created_at",
+                            2,
+                            ""
+                        )
+                    )
+            }
         )
-    })
+
+    return jsonify(
+        {
+            "history":
+                history
+        }
+    )
+    # ============================================================
+# RECHARGE
+# ============================================================
+
+@app.route(
+    "/recharge",
+    methods=["POST"]
+)
+@login_required
+def recharge():
+
+    try:
+
+        data = (
+            request.get_json()
+            or {}
+        )
+
+        amount = int(
+            data.get(
+                "amount",
+                0
+            )
+        )
+
+        if amount not in (
+            100,
+            500,
+            1000
+        ):
+
+            return jsonify(
+                {
+                    "error":
+                        "Invalid recharge amount"
+                }
+            ), 400
+
+        add_credits(
+            session["user_id"],
+            amount,
+            "Recharge"
+        )
+
+        return jsonify(
+            {
+                "message":
+                    "Credits added successfully",
+
+                "credits":
+                    get_credits(
+                        session["user_id"]
+                    )
+            }
+        )
+
+    except Exception as e:
+
+        return jsonify(
+            {
+                "error":
+                    str(e)
+            }
+        ), 500
 
 
-# =========================================================
-# HEALTH
-# =========================================================
+# ============================================================
+# ABOUT
+# ============================================================
 
-@app.route("/health")
-def health():
+@app.route("/about")
+def about():
 
-    return jsonify({
-        "status": "ok",
-        "service": "My AI Studio"
-    })
+    return jsonify(
+        {
+            "name":
+                "My AI Studio",
+
+            "description":
+                "AI Image, Video and Audio Studio"
+        }
+    )
 
 
-# =========================================================
+# ============================================================
+# CONTACT
+# ============================================================
+
+@app.route("/contact")
+def contact():
+
+    return jsonify(
+        {
+            "message":
+                "Contact My AI Studio"
+        }
+    )
+
+
+# ============================================================
+# PRIVACY
+# ============================================================
+
+@app.route("/privacy")
+def privacy():
+
+    return jsonify(
+        {
+            "privacy":
+                "Privacy information for My AI Studio"
+        }
+    )
+
+
+# ============================================================
+# TERMS
+# ============================================================
+
+@app.route("/terms")
+def terms():
+
+    return jsonify(
+        {
+            "terms":
+                "Terms and conditions for My AI Studio"
+        }
+    )
+
+
+# ============================================================
 # ROBOTS
-# =========================================================
+# ============================================================
 
 @app.route("/robots.txt")
 def robots():
@@ -1709,100 +2691,50 @@ def robots():
         "User-agent: *\n"
         "Allow: /\n"
     ), 200, {
-        "Content-Type": "text/plain"
+        "Content-Type":
+            "text/plain"
     }
 
 
-# =========================================================
-# ABOUT
-# =========================================================
+# ============================================================
+# ERROR HANDLERS
+# ============================================================
 
-@app.route("/about")
-def about():
+@app.errorhandler(404)
+def not_found(error):
 
-    return jsonify({
-        "name": "My AI Studio",
-        "description": (
-            "AI image, video and audio generation studio."
-        )
-    })
-
-
-# =========================================================
-# CONTACT
-# =========================================================
-
-@app.route("/contact")
-def contact():
-
-    return jsonify({
-        "message": "Contact My AI Studio."
-    })
+    return jsonify(
+        {
+            "error":
+                "Page not found"
+        }
+    ), 404
 
 
-# =========================================================
-# PRIVACY
-# =========================================================
-
-@app.route("/privacy")
-def privacy():
-
-    return jsonify({
-        "message": (
-            "Privacy information for My AI Studio."
-        )
-    })
-
-
-# =========================================================
-# TERMS
-# =========================================================
-
-@app.route("/terms")
-def terms():
-
-    return jsonify({
-        "message": (
-            "Terms and conditions for My AI Studio."
-        )
-    })
-
-
-# =========================================================
-# INITIALIZE DATABASE
-# =========================================================
-
-try:
-
-    init_database()
+@app.errorhandler(500)
+def internal_error(error):
 
     print(
-        "DATABASE INITIALIZED SUCCESSFULLY"
+        "INTERNAL SERVER ERROR:",
+        repr(error)
     )
 
-except Exception as e:
+    return jsonify(
+        {
+            "error":
+                "Internal server error"
+        }
+    ), 500
 
-    print(
-        "DATABASE INITIALIZATION ERROR:",
-        repr(e)
-    )
 
-
-# =========================================================
+# ============================================================
 # START SERVER
-# =========================================================
+# ============================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.getenv(
-            "PORT",
-            "5000"
-        )
-    )
-
     app.run(
-        host="0.0.0.0",
-        port=port,
+        host="127.0.0.1",
+        port=5000,
         debug=True
     )
