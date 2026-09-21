@@ -11,7 +11,8 @@ from flask import (
     request,
     jsonify,
     session,
-    render_template
+    render_template,
+    send_file
 )
 
 from werkzeug.security import (
@@ -21,14 +22,14 @@ from werkzeug.security import (
 
 
 # ============================================================
-# APP CONFIG
+# APP
 # ============================================================
 
 app = Flask(__name__)
 
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY",
-    "my-ai-studio-secret-2026"
+    "my-ai-studio-local-secret-2026"
 )
 
 app.config["SESSION_COOKIE_NAME"] = "my_ai_studio_session"
@@ -39,7 +40,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30
 
 
 # ============================================================
-# CREDITS
+# CREDIT COSTS
 # ============================================================
 
 NEW_USER_CREDITS = 100
@@ -50,7 +51,7 @@ VIDEO_COST = 21
 
 
 # ============================================================
-# DATABASE
+# DATABASE CONFIG
 # ============================================================
 
 DATABASE_URL = os.environ.get(
@@ -86,15 +87,22 @@ ADMIN_USERNAME = os.environ.get(
     "CHANDANADMIN"
 ).strip()
 
+ADMIN_PASSWORD = os.environ.get(
+    "ADMIN_PASSWORD",
+    ""
+).strip()
+
 
 # ============================================================
 # GENERATED FILES
 # ============================================================
 
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
 GENERATED_DIR = os.path.join(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    ),
+    BASE_DIR,
     "generated"
 )
 
@@ -109,10 +117,8 @@ os.makedirs(
 # ============================================================
 
 def db_placeholder():
-
     if USE_POSTGRES:
         return "%s"
-
     return "?"
 
 
@@ -127,12 +133,44 @@ def db_connection():
 
     return sqlite3.connect(
         os.path.join(
-            os.path.dirname(
-                os.path.abspath(__file__)
-            ),
+            BASE_DIR,
             "users.db"
         )
     )
+
+
+def db_bool(value):
+
+    if USE_POSTGRES:
+        return bool(value)
+
+    return 1 if value else 0
+
+
+def row_value(
+    row,
+    key,
+    index=None,
+    default=None
+):
+
+    if row is None:
+        return default
+
+    if isinstance(row, dict):
+        return row.get(
+            key,
+            default
+        )
+
+    if index is not None:
+
+        try:
+            return row[index]
+        except Exception:
+            return default
+
+    return default
 
 
 def db_execute(
@@ -172,45 +210,109 @@ def db_execute(
         con.close()
 
 
-def db_bool(value):
+# ============================================================
+# DATABASE MIGRATION
+# ============================================================
 
-    if USE_POSTGRES:
-        return bool(value)
-
-    return 1 if value else 0
-
-
-def row_value(
-    row,
-    key,
-    index=None,
-    default=None
+def get_columns(
+    table_name
 ):
 
-    if row is None:
-        return default
+    con = db_connection()
 
-    if isinstance(row, dict):
-        return row.get(
-            key,
-            default
+    try:
+
+        cur = con.cursor()
+
+        if USE_POSTGRES:
+
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                AND table_name = %s
+                """,
+                (
+                    table_name,
+                )
+            )
+
+            rows = cur.fetchall()
+
+            return {
+                row_value(
+                    row,
+                    "column_name",
+                    0
+                )
+                for row in rows
+            }
+
+        cur.execute(
+            "PRAGMA table_info(" +
+            table_name +
+            ")"
         )
 
-    if index is not None:
+        rows = cur.fetchall()
 
-        try:
-            return row[index]
-        except Exception:
-            return default
+        return {
+            row_value(
+                row,
+                "name",
+                1
+            )
+            for row in rows
+        }
 
-    return default
+    finally:
+
+        con.close()
 
 
-# ============================================================
-# DATABASE INITIALIZATION
-# ============================================================
+def add_column_if_missing(
+    table_name,
+    column_name,
+    column_definition
+):
 
-def init_database():
+    columns = get_columns(
+        table_name
+    )
+
+    if column_name in columns:
+        return
+
+    con = db_connection()
+
+    try:
+
+        cur = con.cursor()
+
+        cur.execute(
+            "ALTER TABLE " +
+            table_name +
+            " ADD COLUMN " +
+            column_name +
+            " " +
+            column_definition
+        )
+
+        con.commit()
+
+        print(
+            "Added missing column:",
+            table_name,
+            column_name
+        )
+
+    finally:
+
+        con.close()
+
+
+def create_tables():
 
     con = db_connection()
 
@@ -259,25 +361,6 @@ def init_database():
                 """
             )
 
-            con.commit()
-
-            if ADMIN_USERNAME:
-
-                cur.execute(
-                    """
-                    UPDATE users
-                    SET
-                        is_admin = TRUE,
-                        blocked = FALSE
-                    WHERE username = %s
-                    """,
-                    (
-                        ADMIN_USERNAME,
-                    )
-                )
-
-                con.commit()
-
         else:
 
             cur.execute(
@@ -319,38 +402,153 @@ def init_database():
                 """
             )
 
-            con.commit()
-
-            if ADMIN_USERNAME:
-
-                cur.execute(
-                    """
-                    UPDATE users
-                    SET
-                        is_admin = 1,
-                        blocked = 0
-                    WHERE username = ?
-                    """,
-                    (
-                        ADMIN_USERNAME,
-                    )
-                )
-
-                con.commit()
+        con.commit()
 
     finally:
 
         con.close()
 
 
-init_database()
+def migrate_database():
+
+    print(
+        "Starting database migration..."
+    )
+
+    create_tables()
+
+    # USERS TABLE
+    if USE_POSTGRES:
+
+        add_column_if_missing(
+            "users",
+            "is_admin",
+            "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+
+        add_column_if_missing(
+            "users",
+            "blocked",
+            "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+
+        add_column_if_missing(
+            "users",
+            "created_at",
+            "TIMESTAMP"
+        )
+
+    else:
+
+        add_column_if_missing(
+            "users",
+            "is_admin",
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+
+        add_column_if_missing(
+            "users",
+            "blocked",
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+
+        add_column_if_missing(
+            "users",
+            "created_at",
+            "TIMESTAMP"
+        )
+
+    # GENERATION HISTORY
+    add_column_if_missing(
+        "generation_history",
+        "created_at",
+        "TIMESTAMP"
+    )
+
+    # CREDIT HISTORY
+    add_column_if_missing(
+        "credit_history",
+        "created_at",
+        "TIMESTAMP"
+    )
+
+    print(
+        "Database migration completed."
+    )
+    # ============================================================
+# INITIALIZE DATABASE
+# ============================================================
+
+try:
+
+    migrate_database()
+
+except Exception as e:
+
+    print(
+        "DATABASE MIGRATION ERROR:",
+        repr(e)
+    )
+
+    raise
+
+
+# ============================================================
+# ADMIN BOOTSTRAP
+# ============================================================
+
+def make_configured_admin():
+
+    if not ADMIN_USERNAME:
+        return
+
+    user = get_user_by_username(
+        ADMIN_USERNAME
+    )
+
+    if not user:
+        return
+
+    user_id = row_value(
+        user,
+        "id",
+        0
+    )
+
+    placeholder = db_placeholder()
+
+    db_execute(
+        f"""
+        UPDATE users
+        SET
+            is_admin =
+                {placeholder},
+            blocked =
+                {placeholder}
+        WHERE id =
+            {placeholder}
+        """,
+        (
+            db_bool(True),
+            db_bool(False),
+            user_id
+        ),
+        commit=True
+    )
+
+    print(
+        "Configured admin verified:",
+        ADMIN_USERNAME
+    )
 
 
 # ============================================================
 # USER FUNCTIONS
 # ============================================================
 
-def get_user_by_id(user_id):
+def get_user_by_id(
+    user_id
+):
 
     placeholder = db_placeholder()
 
@@ -365,7 +563,8 @@ def get_user_by_id(user_id):
             blocked,
             created_at
         FROM users
-        WHERE id = {placeholder}
+        WHERE id =
+            {placeholder}
         """,
         (
             user_id,
@@ -374,7 +573,9 @@ def get_user_by_id(user_id):
     )
 
 
-def get_user_by_username(username):
+def get_user_by_username(
+    username
+):
 
     placeholder = db_placeholder()
 
@@ -389,7 +590,8 @@ def get_user_by_username(username):
             blocked,
             created_at
         FROM users
-        WHERE username = {placeholder}
+        WHERE username =
+            {placeholder}
         """,
         (
             username,
@@ -398,7 +600,9 @@ def get_user_by_username(username):
     )
 
 
-def get_credits(user_id):
+def get_credits(
+    user_id
+):
 
     user = get_user_by_id(
         user_id
@@ -424,9 +628,14 @@ def get_credits(user_id):
 def login_required(fn):
 
     @wraps(fn)
-    def wrapper(*args, **kwargs):
+    def wrapper(
+        *args,
+        **kwargs
+    ):
 
-        if not session.get("user_id"):
+        if not session.get(
+            "user_id"
+        ):
 
             return jsonify(
                 {
@@ -446,7 +655,10 @@ def login_required(fn):
 def admin_required(fn):
 
     @wraps(fn)
-    def wrapper(*args, **kwargs):
+    def wrapper(
+        *args,
+        **kwargs
+    ):
 
         user_id = session.get(
             "user_id"
@@ -472,7 +684,7 @@ def admin_required(fn):
             return jsonify(
                 {
                     "error":
-                        "User account not found"
+                        "User not found"
                 }
             ), 401
 
@@ -510,6 +722,24 @@ def admin_required(fn):
         )
 
     return wrapper
+
+
+# ============================================================
+# VERIFY ADMIN AFTER FUNCTIONS EXIST
+# ============================================================
+
+try:
+
+    make_configured_admin()
+
+except Exception as e:
+
+    print(
+        "ADMIN BOOTSTRAP ERROR:",
+        repr(e)
+    )
+
+
 # ============================================================
 # CREDIT FUNCTIONS
 # ============================================================
@@ -517,7 +747,7 @@ def admin_required(fn):
 def add_credits(
     user_id,
     amount,
-    reason="Credit adjustment"
+    reason
 ):
 
     placeholder = db_placeholder()
@@ -531,8 +761,11 @@ def add_credits(
         cur.execute(
             f"""
             UPDATE users
-            SET credits = credits + {placeholder}
-            WHERE id = {placeholder}
+            SET credits =
+                credits +
+                {placeholder}
+            WHERE id =
+                {placeholder}
             """,
             (
                 amount,
@@ -586,9 +819,13 @@ def use_credits(
         cur.execute(
             f"""
             UPDATE users
-            SET credits = credits - {placeholder}
-            WHERE id = {placeholder}
-            AND credits >= {placeholder}
+            SET credits =
+                credits -
+                {placeholder}
+            WHERE id =
+                {placeholder}
+            AND credits >=
+                {placeholder}
             """,
             (
                 amount,
@@ -640,10 +877,6 @@ def use_credits(
         con.close()
 
 
-# ============================================================
-# GENERATION HISTORY
-# ============================================================
-
 def save_generation(
     user_id,
     generation_type,
@@ -681,7 +914,7 @@ def save_generation(
 
 
 # ============================================================
-# POLLINATIONS
+# POLLINATIONS HELPERS
 # ============================================================
 
 def require_pollinations_key():
@@ -689,7 +922,7 @@ def require_pollinations_key():
     if not POLLINATIONS_API_KEY:
 
         raise RuntimeError(
-            "Pollinations API key is not configured."
+            "POLLINATIONS_API_KEY is not configured on server."
         )
 
 
@@ -726,7 +959,9 @@ def health():
 
     return jsonify(
         {
-            "status": "ok",
+            "status":
+                "ok",
+
             "database":
                 "postgres"
                 if USE_POSTGRES
@@ -818,71 +1053,36 @@ def register():
 
             cur = con.cursor()
 
-            if USE_POSTGRES:
-
-                cur.execute(
-                    f"""
-                    INSERT INTO users
-                    (
-                        username,
-                        password,
-                        credits,
-                        is_admin,
-                        blocked
-                    )
-                    VALUES
-                    (
-                        {placeholder},
-                        {placeholder},
-                        {placeholder},
-                        {placeholder},
-                        {placeholder}
-                    )
-                    """,
-                    (
-                        username,
-                        password_hash,
-                        NEW_USER_CREDITS,
-                        db_bool(
-                            username ==
-                            ADMIN_USERNAME
-                        ),
-                        db_bool(False)
-                    )
+            cur.execute(
+                f"""
+                INSERT INTO users
+                (
+                    username,
+                    password,
+                    credits,
+                    is_admin,
+                    blocked
                 )
-
-            else:
-
-                cur.execute(
-                    f"""
-                    INSERT INTO users
-                    (
-                        username,
-                        password,
-                        credits,
-                        is_admin,
-                        blocked
-                    )
-                    VALUES
-                    (
-                        {placeholder},
-                        {placeholder},
-                        {placeholder},
-                        {placeholder},
-                        {placeholder}
-                    )
-                    """,
-                    (
-                        username,
-                        password_hash,
-                        NEW_USER_CREDITS,
-                        1 if
+                VALUES
+                (
+                    {placeholder},
+                    {placeholder},
+                    {placeholder},
+                    {placeholder},
+                    {placeholder}
+                )
+                """,
+                (
+                    username,
+                    password_hash,
+                    NEW_USER_CREDITS,
+                    db_bool(
                         username ==
                         ADMIN_USERNAME
-                        else 0,
-                        0
-                    )
+                    ),
+                    db_bool(False)
                 )
+            )
 
             con.commit()
 
@@ -913,9 +1113,7 @@ def register():
                     str(e)
             }
         ), 500
-
-
-# ============================================================
+        # ============================================================
 # LOGIN
 # ============================================================
 
@@ -1011,9 +1209,7 @@ def login():
             )
         )
 
-        # Configured admin is always admin
-        # and cannot remain blocked.
-
+        # Configured admin is always active.
         if username == ADMIN_USERNAME:
 
             is_admin = True
@@ -1049,10 +1245,8 @@ def login():
                 }
             ), 403
 
-        # ----------------------------------------------------
-        # IMPORTANT SESSION FIX
-        # ----------------------------------------------------
-
+        # IMPORTANT:
+        # Clear old session and create fresh session.
         session.clear()
 
         session.permanent = True
@@ -1076,9 +1270,7 @@ def login():
         print(
             "LOGIN SUCCESS:",
             username,
-            "USER_ID:",
             user_id,
-            "ADMIN:",
             is_admin
         )
 
@@ -1223,16 +1415,7 @@ def me():
 )
 def logout():
 
-    username = session.get(
-        "username"
-    )
-
     session.clear()
-
-    print(
-        "LOGOUT:",
-        username
-    )
 
     return jsonify(
         {
@@ -1258,6 +1441,8 @@ def credits():
                 )
         }
     )
+
+
 # ============================================================
 # IMAGE GENERATION
 # ============================================================
@@ -1301,7 +1486,7 @@ def generate_image():
         return jsonify(
             {
                 "error":
-                    "Your credits are finished. Please recharge to continue."
+                    "Not enough credits"
             }
         ), 402
 
@@ -1359,11 +1544,6 @@ def generate_image():
             timeout=300
         )
 
-        print(
-            "IMAGE STATUS:",
-            response.status_code
-        )
-
         if response.status_code != 200:
 
             raise RuntimeError(
@@ -1373,21 +1553,6 @@ def generate_image():
                 ) +
                 " - " +
                 response.text[:500]
-            )
-
-        content_type = (
-            response.headers.get(
-                "Content-Type",
-                ""
-            )
-        )
-
-        if not content_type.startswith(
-            "image/"
-        ):
-
-            raise RuntimeError(
-                "Image API did not return an image."
             )
 
         filename = (
@@ -1509,7 +1674,7 @@ def generate_audio():
         return jsonify(
             {
                 "error":
-                    "Your credits are finished. Please recharge to continue."
+                    "Not enough credits"
             }
         ), 402
 
@@ -1545,22 +1710,15 @@ def generate_audio():
             encoded_text
         )
 
-        params = {
-            "voice":
-                "nova"
-        }
-
         response = requests.get(
             url,
-            params=params,
+            params={
+                "voice":
+                    "nova"
+            },
             headers=
                 pollinations_headers(),
             timeout=300
-        )
-
-        print(
-            "AUDIO STATUS:",
-            response.status_code
         )
 
         if response.status_code != 200:
@@ -1648,9 +1806,7 @@ def generate_audio():
                     str(e)
             }
         ), 500
-
-
-# ============================================================
+        # ============================================================
 # VIDEO GENERATION
 # ============================================================
 
@@ -1693,7 +1849,7 @@ def generate_video():
         return jsonify(
             {
                 "error":
-                    "Your credits are finished. Please recharge to continue."
+                    "Not enough credits"
             }
         ), 402
 
@@ -1751,11 +1907,6 @@ def generate_video():
             timeout=600
         )
 
-        print(
-            "VIDEO STATUS:",
-            response.status_code
-        )
-
         if response.status_code != 200:
 
             raise RuntimeError(
@@ -1765,21 +1916,6 @@ def generate_video():
                 ) +
                 " - " +
                 response.text[:500]
-            )
-
-        content_type = (
-            response.headers.get(
-                "Content-Type",
-                ""
-            )
-        )
-
-        if "video" not in (
-            content_type.lower()
-        ):
-
-            raise RuntimeError(
-                "Video API did not return a video."
             )
 
         filename = (
@@ -1859,13 +1995,15 @@ def generate_video():
 
 
 # ============================================================
-# GENERATED FILES
+# GENERATED FILE
 # ============================================================
 
 @app.route(
     "/generated/<path:filename>"
 )
-def generated_file(filename):
+def generated_file(
+    filename
+):
 
     safe_name = os.path.basename(
         filename
@@ -1973,6 +2111,8 @@ def user_history():
                 history
         }
     )
+
+
 # ============================================================
 # ADMIN STATS
 # ============================================================
@@ -1990,7 +2130,10 @@ def admin_stats():
         cur = con.cursor()
 
         cur.execute(
-            "SELECT COUNT(*) AS total FROM users"
+            """
+            SELECT COUNT(*) AS total
+            FROM users
+            """
         )
 
         total_users = cur.fetchone()
@@ -2369,9 +2512,7 @@ def admin_block():
             {placeholder}
         """,
         (
-            db_bool(
-                blocked
-            ),
+            db_bool(blocked),
             user_id
         ),
         commit=True
@@ -2386,10 +2527,8 @@ def admin_block():
                 blocked
         }
     )
-
-
 # ============================================================
-# ADMIN GENERATION HISTORY
+# ADMIN GENERATIONS
 # ============================================================
 
 @app.route(
@@ -2551,7 +2690,9 @@ def admin_credit_history():
                 history
         }
     )
-    # ============================================================
+
+
+# ============================================================
 # RECHARGE
 # ============================================================
 
@@ -2562,63 +2703,16 @@ def admin_credit_history():
 @login_required
 def recharge():
 
-    try:
-
-        data = (
-            request.get_json()
-            or {}
-        )
-
-        amount = int(
-            data.get(
-                "amount",
-                0
-            )
-        )
-
-        if amount not in (
-            100,
-            500,
-            1000
-        ):
-
-            return jsonify(
-                {
-                    "error":
-                        "Invalid recharge amount"
-                }
-            ), 400
-
-        add_credits(
-            session["user_id"],
-            amount,
-            "Recharge"
-        )
-
-        return jsonify(
-            {
-                "message":
-                    "Credits added successfully",
-
-                "credits":
-                    get_credits(
-                        session["user_id"]
-                    )
-            }
-        )
-
-    except Exception as e:
-
-        return jsonify(
-            {
-                "error":
-                    str(e)
-            }
-        ), 500
+    return jsonify(
+        {
+            "error":
+                "Online payment gateway is not connected yet."
+        }
+    ), 501
 
 
 # ============================================================
-# ABOUT
+# INFORMATION ROUTES
 # ============================================================
 
 @app.route("/about")
@@ -2635,10 +2729,6 @@ def about():
     )
 
 
-# ============================================================
-# CONTACT
-# ============================================================
-
 @app.route("/contact")
 def contact():
 
@@ -2649,10 +2739,6 @@ def contact():
         }
     )
 
-
-# ============================================================
-# PRIVACY
-# ============================================================
 
 @app.route("/privacy")
 def privacy():
@@ -2665,10 +2751,6 @@ def privacy():
     )
 
 
-# ============================================================
-# TERMS
-# ============================================================
-
 @app.route("/terms")
 def terms():
 
@@ -2679,10 +2761,6 @@ def terms():
         }
     )
 
-
-# ============================================================
-# ROBOTS
-# ============================================================
 
 @app.route("/robots.txt")
 def robots():
@@ -2728,7 +2806,7 @@ def internal_error(error):
 
 
 # ============================================================
-# START SERVER
+# START
 # ============================================================
 
 if __name__ == "__main__":
