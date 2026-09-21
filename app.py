@@ -501,12 +501,9 @@ def create_tables():
 
 def migrate_database():
 
-    print(
-        "Starting database migration..."
-    )
+    print("Starting database migration...")
 
     create_tables()
-
 
     # ========================================================
     # USERS TABLE
@@ -557,6 +554,23 @@ def migrate_database():
     # GENERATION HISTORY
     # ========================================================
 
+    if USE_POSTGRES:
+
+        add_column_if_missing(
+            "generation_history",
+            "user_id",
+            "INTEGER"
+        )
+
+    else:
+
+        add_column_if_missing(
+            "generation_history",
+            "user_id",
+            "INTEGER DEFAULT 0"
+        )
+
+
     add_column_if_missing(
         "generation_history",
         "type",
@@ -591,6 +605,58 @@ def migrate_database():
             "TIMESTAMP"
         )
 
+
+    # ========================================================
+    # CREDIT HISTORY
+    # ========================================================
+
+    if USE_POSTGRES:
+
+        add_column_if_missing(
+            "credit_history",
+            "user_id",
+            "INTEGER"
+        )
+
+    else:
+
+        add_column_if_missing(
+            "credit_history",
+            "user_id",
+            "INTEGER DEFAULT 0"
+        )
+
+
+    add_column_if_missing(
+        "credit_history",
+        "amount",
+        "INTEGER NOT NULL DEFAULT 0"
+    )
+
+    add_column_if_missing(
+        "credit_history",
+        "reason",
+        "TEXT NOT NULL DEFAULT ''"
+    )
+
+    if USE_POSTGRES:
+
+        add_column_if_missing(
+            "credit_history",
+            "created_at",
+            "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        )
+
+    else:
+
+        add_column_if_missing(
+            "credit_history",
+            "created_at",
+            "TIMESTAMP"
+        )
+
+
+    print("Database migration completed.")
 
     # ========================================================
     # CREDIT HISTORY
@@ -2850,4 +2916,3 @@ if __name__ == "__main__":
         port=5000,
         debug=True
     )
-    
