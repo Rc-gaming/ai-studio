@@ -1645,176 +1645,129 @@ def logout():
 
 @app.route("/credits")
 @login_required
-def credits():
+def use_credits(
+    user_id,
+    amount,
+    reason
+):
 
-    user_id = session.get(
-        "user_id"
-    )
+    # Safety check: logged-in user ID must exist
+    if user_id is None:
 
-    return jsonify(
-        {
-            "credits":
-                get_credits(user_id)
-        }
-    )
-
-
-# ============================================================
-# IMAGE GENERATION
-# ============================================================
-
-@app.route(
-    "/generate",
-    methods=["POST"]
-)
-@login_required
-def generate_image():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    prompt = str(
-        data.get(
-            "prompt",
-            ""
+        print(
+            "USE CREDITS ERROR: user_id is None"
         )
-    ).strip()
 
-    if not prompt:
-
-        return jsonify(
-            {
-                "error":
-                    "Prompt is required."
-            }
-        ), 400
-
-    user_id = session.get(
-        "user_id"
-    )
-
-    if get_credits(user_id) < IMAGE_COST:
-
-        return jsonify(
-            {
-                "error":
-                    "Not enough credits."
-            }
-        ), 402
-
-    charged = use_credits(
-        user_id,
-        IMAGE_COST,
-        "Image generation"
-    )
-
-    if not charged:
-
-        return jsonify(
-            {
-                "error":
-                    "Not enough credits."
-            }
-        ), 402
-
-    filename = (
-        uuid.uuid4().hex
-        + ".png"
-    )
-
-    filepath = os.path.join(
-        GENERATED_DIR,
-        filename
-    )
+        return False
 
     try:
 
-        encoded_prompt = quote(
-            prompt,
-            safe=""
+        user_id = int(user_id)
+        amount = int(amount)
+
+    except Exception:
+
+        print(
+            "USE CREDITS ERROR: invalid user_id or amount"
         )
 
-        url = (
-            POLLINATIONS_BASE
-            + "/image/"
-            + encoded_prompt
-        )
+        return False
 
-        response = requests.get(
-            url,
-            headers=pollinations_headers(),
-            params={
-                "model":
-                    "black-forest-labs/flux.1-schnell",
+    if amount <= 0:
 
-                "width":
-                    1024,
+        return False
 
-                "height":
-                    1024,
+    placeholder = db_placeholder()
 
-                "n":
-                    1
-            },
-            timeout=300
-        )
+    connection = db_connection()
 
-        response.raise_for_status()
+    try:
 
-        with open(
-            filepath,
-            "wb"
-        ) as file:
+        cursor = connection.cursor()
 
-            file.write(
-                response.content
+        # ----------------------------------------------------
+        # Deduct credits only when balance is sufficient
+        # ----------------------------------------------------
+
+        cursor.execute(
+            f"""
+            UPDATE users
+            SET credits = credits - {placeholder}
+            WHERE id = {placeholder}
+              AND credits >= {placeholder}
+            """,
+            (
+                amount,
+                user_id,
+                amount
             )
+        )
 
-        save_generation(
+        if cursor.rowcount != 1:
+
+            connection.rollback()
+
+            return False
+
+        # ----------------------------------------------------
+        # Save credit history
+        # ----------------------------------------------------
+
+        cursor.execute(
+            f"""
+            INSERT INTO credit_history
+            (
+                user_id,
+                amount,
+                reason
+            )
+            VALUES
+            (
+                {placeholder},
+                {placeholder},
+                {placeholder}
+            )
+            """,
+            (
+                user_id,
+                -amount,
+                reason
+            )
+        )
+
+        connection.commit()
+
+        print(
+            "CREDITS USED:",
             user_id,
-            "image",
-            prompt,
-            IMAGE_COST
+            amount,
+            reason
         )
 
-        return jsonify(
-            {
-                "success":
-                    True,
-
-                "type":
-                    "image",
-
-                "credits":
-                    get_credits(user_id),
-
-                "url":
-                    "/generated/"
-                    + filename
-            }
-        )
+        return True
 
     except Exception as e:
 
+        connection.rollback()
+
         print(
-            "IMAGE GENERATION ERROR:",
+            "USE CREDITS ERROR:",
             repr(e)
         )
 
-        add_credits(
-            user_id,
-            IMAGE_COST,
-            "Image generation refund"
-        )
+        return False
 
-        return jsonify(
-            {
-                "error":
-                    "Image generation failed."
-            }
-        ), 500
+    finally:
 
+        try:
+
+            cursor.close()
+
+        except Exception:
+
+            pass
+
+        connection.close()
 
 # ============================================================
 # AUDIO GENERATION
