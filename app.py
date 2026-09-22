@@ -208,14 +208,31 @@ def add_credits(uid, amount, reason):
     p = ph(); c, cur = db(), None
     try:
         cur = c.cursor()
-        cur.execute(f"UPDATE users SET credits=credits+{p} WHERE id={p}", (amount,uid))
-        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid,amount,reason))
-        c.commit(); return True
+        cur.execute(f"UPDATE users SET credits=credits+{p} WHERE id={p}", (amount, uid))
+        if cur.rowcount != 1:
+            c.rollback(); return False
+        c.commit()
     except Exception:
         c.rollback(); raise
     finally:
         if cur: cur.close()
         c.close()
+    # Credit history must never make a successful credit update fail.
+    try:
+        p = ph(); c, cur = db(), None
+        cur = c.cursor()
+        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid, amount, reason))
+        c.commit()
+    except Exception as e:
+        try: c.rollback()
+        except Exception: pass
+        print("CREDIT HISTORY ERROR:", repr(e))
+    finally:
+        try:
+            if cur: cur.close()
+            c.close()
+        except Exception: pass
+    return True
 
 def use_credits(uid, amount, reason):
     if uid is None: return False
@@ -225,16 +242,36 @@ def use_credits(uid, amount, reason):
     p = ph(); c, cur = db(), None
     try:
         cur = c.cursor()
-        cur.execute(f"UPDATE users SET credits=credits-{p} WHERE id={p} AND credits>={p}", (amount,uid,amount))
+        cur.execute(f"UPDATE users SET credits=credits-{p} WHERE id={p} AND credits>={p}", (amount, uid, amount))
         if cur.rowcount != 1:
             c.rollback(); return False
-        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid,-amount,reason))
-        c.commit(); return True
+        # Commit the actual credit deduction FIRST. A history-table problem
+        # must not turn a valid balance into a fake 'Not enough credits' error.
+        c.commit()
     except Exception as e:
-        c.rollback(); print("USE CREDITS ERROR:", repr(e)); return False
+        try: c.rollback()
+        except Exception: pass
+        print("USE CREDITS ERROR:", repr(e))
+        return False
     finally:
         if cur: cur.close()
         c.close()
+    # History is secondary; failure here must not undo the deduction.
+    try:
+        p = ph(); c, cur = db(), None
+        cur = c.cursor()
+        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid, -amount, reason))
+        c.commit()
+    except Exception as e:
+        try: c.rollback()
+        except Exception: pass
+        print("CREDIT HISTORY ERROR:", repr(e))
+    finally:
+        try:
+            if cur: cur.close()
+            c.close()
+        except Exception: pass
+    return True
 
 def save_generation(uid, kind, prompt, cost):
     p = ph()
