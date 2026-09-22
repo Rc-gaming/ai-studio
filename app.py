@@ -98,7 +98,7 @@ def create_tables():
             cur.execute("""CREATE TABLE IF NOT EXISTS users(
                 id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
                 credits INTEGER NOT NULL DEFAULT 0, is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-                blocked BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+                blocked BOOLEAN NOT NULL DEFAULT FALSE, admin_initialized BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
             cur.execute("""CREATE TABLE IF NOT EXISTS generation_history(
                 id SERIAL PRIMARY KEY, user_id INTEGER, type TEXT NOT NULL DEFAULT 'unknown',
                 prompt TEXT NOT NULL DEFAULT '', credits INTEGER NOT NULL DEFAULT 0,
@@ -110,7 +110,7 @@ def create_tables():
             cur.execute("""CREATE TABLE IF NOT EXISTS users(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
                 credits INTEGER NOT NULL DEFAULT 0, is_admin INTEGER NOT NULL DEFAULT 0,
-                blocked INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+                blocked INTEGER NOT NULL DEFAULT 0, admin_initialized INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
             cur.execute("""CREATE TABLE IF NOT EXISTS generation_history(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, type TEXT NOT NULL DEFAULT 'unknown',
                 prompt TEXT NOT NULL DEFAULT '', credits INTEGER NOT NULL DEFAULT 0,
@@ -129,6 +129,7 @@ def migrate():
         specs = [
             ("users","is_admin","BOOLEAN NOT NULL DEFAULT FALSE"),
             ("users","blocked","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("users","admin_initialized","BOOLEAN NOT NULL DEFAULT FALSE"),
             ("users","created_at","TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("generation_history","user_id","INTEGER"),
             ("generation_history","type","TEXT NOT NULL DEFAULT 'unknown'"),
@@ -144,6 +145,7 @@ def migrate():
         specs = [
             ("users","is_admin","INTEGER NOT NULL DEFAULT 0"),
             ("users","blocked","INTEGER NOT NULL DEFAULT 0"),
+            ("users","admin_initialized","INTEGER NOT NULL DEFAULT 0"),
             ("users","created_at","TIMESTAMP"),
             ("generation_history","user_id","INTEGER DEFAULT 0"),
             ("generation_history","type","TEXT NOT NULL DEFAULT 'unknown'"),
@@ -165,11 +167,11 @@ migrate()
 
 def user_id_by_name(name):
     p = ph()
-    return q(f"SELECT id,username,password,credits,is_admin,blocked,created_at FROM users WHERE username={p}", (name,), one=True)
+    return q(f"SELECT id,username,password,credits,is_admin,blocked,admin_initialized,created_at FROM users WHERE username={p}", (name,), one=True)
 
 def user_id(uid):
     p = ph()
-    return q(f"SELECT id,username,password,credits,is_admin,blocked,created_at FROM users WHERE id={p}", (uid,), one=True)
+    return q(f"SELECT id,username,password,credits,is_admin,blocked,admin_initialized,created_at FROM users WHERE id={p}", (uid,), one=True)
 
 def balance(uid):
     return int(val(user_id(uid), "credits", 3, 0) or 0)
@@ -244,10 +246,23 @@ def headers():
     return {"Authorization":"Bearer "+POLLINATIONS_API_KEY,"User-Agent":"My-AI-Studio/1.0"}
 
 # Make configured admin an admin if the account already exists.
-if user_id_by_name(ADMIN_USERNAME):
+# Also give the existing admin a one-time 100-credit starter balance if
+# the account was created before the admin credit system existed.
+_admin = user_id_by_name(ADMIN_USERNAME)
+if _admin:
     p = ph()
+    admin_value = True if USE_POSTGRES else 1
+    false_value = False if USE_POSTGRES else 0
     q(f"UPDATE users SET is_admin={p}, blocked={p} WHERE username={p}",
-      (True if USE_POSTGRES else 1, False if USE_POSTGRES else 0, ADMIN_USERNAME), commit=True)
+      (admin_value, false_value, ADMIN_USERNAME), commit=True)
+
+    # The bonus is protected by admin_initialized, so server restarts
+    # cannot repeatedly add credits after the admin spends them.
+    if not bool(val(_admin, "admin_initialized", 6, False)):
+        if int(val(_admin, "credits", 3, 0) or 0) == 0:
+            add_credits(val(_admin, "id", 0), NEW_USER_CREDITS, "One-time admin starter credits")
+        q(f"UPDATE users SET admin_initialized={p} WHERE username={p}",
+          (admin_value, ADMIN_USERNAME), commit=True)
 
 
 # ---------------- ROUTES ----------------
@@ -268,8 +283,8 @@ def register():
     p=ph(); c,cur=db(),None
     try:
         cur=c.cursor()
-        cur.execute(f"INSERT INTO users(username,password,credits,is_admin,blocked) VALUES({p},{p},{p},{p},{p})",
-                    (name,generate_password_hash(pw),0,False if USE_POSTGRES else 0,False if USE_POSTGRES else 0))
+        cur.execute(f"INSERT INTO users(username,password,credits,is_admin,blocked,admin_initialized) VALUES({p},{p},{p},{p},{p},{p})",
+                    (name,generate_password_hash(pw),0,False if USE_POSTGRES else 0,False if USE_POSTGRES else 0,False if USE_POSTGRES else 0))
         c.commit()
     except Exception as e:
         c.rollback(); print("REGISTER ERROR:",repr(e)); return jsonify(error="Registration failed."),500
@@ -314,7 +329,7 @@ def generate_image():
     if not prompt: return jsonify(error="Prompt is required."),400
     uid=session["user_id"]
     if balance(uid)<IMAGE_COST or not use_credits(uid,IMAGE_COST,"Image generation"):
-        return jsonify(error="Not enough credits."),402
+        return jsonify(error=f"Not enough credits. Your balance is {balance(uid)} credits; this generation requires {IMAGE_COST} credits."),402
     filename=uuid.uuid4().hex+".png"; path=os.path.join(GENERATED_DIR,filename)
     try:
         r=requests.get(POLLINATIONS_BASE+"/image/"+quote(prompt,safe=""),headers=headers(),
@@ -333,7 +348,7 @@ def audio():
     d=data(); text=str(d.get("text",d.get("prompt",""))).strip()
     if not text: return jsonify(error="Text is required."),400
     uid=session["user_id"]
-    if balance(uid)<AUDIO_COST or not use_credits(uid,AUDIO_COST,"Audio generation"): return jsonify(error="Not enough credits."),402
+    if balance(uid)<AUDIO_COST or not use_credits(uid,AUDIO_COST,"Audio generation"): return jsonify(error=f"Not enough credits. Your balance is {balance(uid)} credits; this generation requires {AUDIO_COST} credits."),402
     filename=uuid.uuid4().hex+".mp3"; path=os.path.join(GENERATED_DIR,filename)
     try:
         r=requests.get(POLLINATIONS_BASE+"/audio/"+quote(text,safe=""),headers=headers(),params={"voice":"nova"},timeout=300)
@@ -349,7 +364,7 @@ def video():
     d=data(); prompt=str(d.get("prompt",d.get("text",""))).strip()
     if not prompt: return jsonify(error="Prompt is required."),400
     uid=session["user_id"]
-    if balance(uid)<VIDEO_COST or not use_credits(uid,VIDEO_COST,"Video generation"): return jsonify(error="Not enough credits."),402
+    if balance(uid)<VIDEO_COST or not use_credits(uid,VIDEO_COST,"Video generation"): return jsonify(error=f"Not enough credits. Your balance is {balance(uid)} credits; this generation requires {VIDEO_COST} credits."),402
     filename=uuid.uuid4().hex+".mp4"; path=os.path.join(GENERATED_DIR,filename)
     try:
         r=requests.get(POLLINATIONS_BASE+"/video/"+quote(prompt,safe=""),headers=headers(),
