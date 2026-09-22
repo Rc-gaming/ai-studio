@@ -221,7 +221,12 @@ def add_credits(uid, amount, reason):
     try:
         p = ph(); c, cur = db(), None
         cur = c.cursor()
-        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid, amount, reason))
+        # Some existing databases have a required username column.
+        if "username" in cols("credit_history"):
+            uname = val(user_id(uid), "username", 1, "")
+            cur.execute(f"INSERT INTO credit_history(user_id,username,amount,reason) VALUES({p},{p},{p},{p})", (uid, uname, amount, reason))
+        else:
+            cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid, amount, reason))
         c.commit()
     except Exception as e:
         try: c.rollback()
@@ -260,7 +265,12 @@ def use_credits(uid, amount, reason):
     try:
         p = ph(); c, cur = db(), None
         cur = c.cursor()
-        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid, -amount, reason))
+        # Some existing databases have a required username column.
+        if "username" in cols("credit_history"):
+            uname = val(user_id(uid), "username", 1, "")
+            cur.execute(f"INSERT INTO credit_history(user_id,username,amount,reason) VALUES({p},{p},{p},{p})", (uid, uname, -amount, reason))
+        else:
+            cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid, -amount, reason))
         c.commit()
     except Exception as e:
         try: c.rollback()
@@ -274,9 +284,15 @@ def use_credits(uid, amount, reason):
     return True
 
 def save_generation(uid, kind, prompt, cost):
+    # Existing Render databases may have a required username column.
     p = ph()
-    q(f"INSERT INTO generation_history(user_id,type,prompt,credits) VALUES({p},{p},{p},{p})",
-      (int(uid),kind,prompt,int(cost)), commit=True)
+    if "username" in cols("generation_history"):
+        uname = val(user_id(uid), "username", 1, "")
+        q(f"INSERT INTO generation_history(user_id,username,type,prompt,credits) VALUES({p},{p},{p},{p},{p})",
+          (int(uid),uname,kind,prompt,int(cost)), commit=True)
+    else:
+        q(f"INSERT INTO generation_history(user_id,type,prompt,credits) VALUES({p},{p},{p},{p})",
+          (int(uid),kind,prompt,int(cost)), commit=True)
 
 def headers():
     if not POLLINATIONS_API_KEY: raise RuntimeError("POLLINATIONS_API_KEY is not configured.")
