@@ -1,6 +1,5 @@
 Flask
-gunicorn
+requests
+Pillow
 huggingface_hub
 gradio_client
-Pillow
-Werkzeug
