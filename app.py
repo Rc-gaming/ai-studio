@@ -284,15 +284,33 @@ def use_credits(uid, amount, reason):
     return True
 
 def save_generation(uid, kind, prompt, cost):
-    # Existing Render databases may have a required username column.
-    p = ph()
-    if "username" in cols("generation_history"):
-        uname = val(user_id(uid), "username", 1, "")
-        q(f"INSERT INTO generation_history(user_id,username,type,prompt,credits) VALUES({p},{p},{p},{p},{p})",
-          (int(uid),uname,kind,prompt,int(cost)), commit=True)
-    else:
-        q(f"INSERT INTO generation_history(user_id,type,prompt,credits) VALUES({p},{p},{p},{p})",
-          (int(uid),kind,prompt,int(cost)), commit=True)
+    try:
+        p = ph()
+
+        if "username" in cols("generation_history"):
+            uname = val(user_id(uid), "username", 1, "")
+            q(
+                f"""INSERT INTO generation_history
+                (user_id,username,generation_type,prompt,credits)
+                VALUES({p},{p},{p},{p},{p})""",
+                (int(uid), uname, kind, prompt, int(cost)),
+                commit=True
+            )
+
+        else:
+            q(
+                f"""INSERT INTO generation_history
+                (user_id,generation_type,prompt,credits)
+                VALUES({p},{p},{p},{p})""",
+                (int(uid), kind, prompt, int(cost)),
+                commit=True
+            )
+
+        return True
+
+    except Exception as e:
+        print("SAVE GENERATION ERROR:", repr(e))
+        return False
 
 def headers():
     if not POLLINATIONS_API_KEY: raise RuntimeError("POLLINATIONS_API_KEY is not configured.")
