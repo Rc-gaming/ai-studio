@@ -1,2871 +1,456 @@
-import os
-import uuid
-import sqlite3
+import os, uuid, sqlite3
 from functools import wraps
 from urllib.parse import quote
-
 import requests
-
-from flask import (
-    Flask,
-    request,
-    jsonify,
-    session,
-    render_template,
-    send_file
-)
-
-from werkzeug.security import (
-    generate_password_hash,
-    check_password_hash
-)
-
-
-# ============================================================
-# APP CONFIGURATION
-# ============================================================
+from flask import Flask, request, jsonify, session, render_template, send_file
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-
-app.secret_key = os.environ.get(
-    "FLASK_SECRET_KEY",
-    "my-ai-studio-local-secret-2026"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "my-ai-studio-local-secret-2026")
+app.config.update(
+    SESSION_COOKIE_NAME="my_ai_studio_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=False,
+    PERMANENT_SESSION_LIFETIME=60*60*24*30,
 )
 
-app.config["SESSION_COOKIE_NAME"] = (
-    "my_ai_studio_session"
-)
+NEW_USER_CREDITS, IMAGE_COST, AUDIO_COST, VIDEO_COST = 100, 5, 8, 21
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GENERATED_DIR = os.path.join(BASE_DIR, "generated")
+os.makedirs(GENERATED_DIR, exist_ok=True)
 
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-
-app.config["SESSION_COOKIE_SECURE"] = False
-
-app.config["PERMANENT_SESSION_LIFETIME"] = (
-    60 * 60 * 24 * 30
-)
-
-
-# ============================================================
-# CREDIT CONFIGURATION
-# ============================================================
-
-NEW_USER_CREDITS = 100
-
-IMAGE_COST = 5
-
-AUDIO_COST = 8
-
-VIDEO_COST = 21
-
-
-# ============================================================
-# DATABASE CONFIGURATION
-# ============================================================
-
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    ""
-)
-
-USE_POSTGRES = bool(
-    DATABASE_URL
-)
-
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+USE_POSTGRES = bool(DATABASE_URL)
+POLLINATIONS_API_KEY = os.environ.get("POLLINATIONS_API_KEY", "")
+POLLINATIONS_BASE = "https://gen.pollinations.ai"
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "CHANDANADMIN")
 
 try:
-
     import psycopg2
-
     from psycopg2.extras import RealDictCursor
-
 except ImportError:
-
     psycopg2 = None
-
     RealDictCursor = None
 
 
-# ============================================================
-# POLLINATIONS CONFIGURATION
-# ============================================================
+# ---------------- DATABASE ----------------
 
-POLLINATIONS_API_KEY = os.environ.get(
-    "POLLINATIONS_API_KEY",
-    ""
-)
+def ph(): return "%s" if USE_POSTGRES else "?"
 
-POLLINATIONS_BASE = (
-    "https://gen.pollinations.ai"
-)
-
-
-# ============================================================
-# ADMIN CONFIGURATION
-# ============================================================
-
-ADMIN_USERNAME = os.environ.get(
-    "ADMIN_USERNAME",
-    "CHANDANADMIN"
-)
-
-ADMIN_PASSWORD = os.environ.get(
-    "ADMIN_PASSWORD",
-    ""
-)
-
-
-# ============================================================
-# GENERATED FILES DIRECTORY
-# ============================================================
-
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
-
-GENERATED_DIR = os.path.join(
-    BASE_DIR,
-    "generated"
-)
-
-os.makedirs(
-    GENERATED_DIR,
-    exist_ok=True
-)
-
-
-# ============================================================
-# DATABASE HELPERS
-# ============================================================
-
-def db_placeholder():
-
+def db():
     if USE_POSTGRES:
+        if not psycopg2: raise RuntimeError("psycopg2 is not installed.")
+        return psycopg2.connect(DATABASE_URL)
+    c = sqlite3.connect(os.path.join(BASE_DIR, "users.db"))
+    c.row_factory = sqlite3.Row
+    return c
 
-        return "%s"
-
-    return "?"
-
-
-def db_connection():
-
-    if USE_POSTGRES:
-
-        if not psycopg2:
-
-            raise RuntimeError(
-                "psycopg2 is not installed."
-            )
-
-        return psycopg2.connect(
-            DATABASE_URL
-        )
-
-    connection = sqlite3.connect(
-        os.path.join(
-            BASE_DIR,
-            "users.db"
-        )
-    )
-
-    connection.row_factory = sqlite3.Row
-
-    return connection
-
-
-def db_bool(value):
-
-    if USE_POSTGRES:
-
-        return bool(value)
-
-    return 1 if value else 0
-
-
-def row_value(
-    row,
-    key,
-    index=None,
-    default=None
-):
-
-    if row is None:
-
-        return default
-
-    if isinstance(row, dict):
-
-        return row.get(
-            key,
-            default
-        )
-
+def q(sql, params=(), one=False, many=False, commit=False):
+    c, cur = db(), None
     try:
+        cur = c.cursor(cursor_factory=RealDictCursor) if USE_POSTGRES else c.cursor()
+        cur.execute(sql, params)
+        out = cur.fetchone() if one else cur.fetchall() if many else None
+        if commit: c.commit()
+        return out
+    finally:
+        if cur: cur.close()
+        c.close()
 
-        return row[key]
-
+def val(row, key, idx=0, default=None):
+    if row is None: return default
+    try: return row.get(key, default) if isinstance(row, dict) else row[key]
     except Exception:
+        try: return row[idx]
+        except Exception: return default
 
-        pass
-
-    if index is not None:
-
-        try:
-
-            return row[index]
-
-        except Exception:
-
-            pass
-
-    return default
-
-
-def db_execute(
-    query,
-    params=None,
-    fetchone=False,
-    fetchall=False,
-    commit=False
-):
-
-    connection = db_connection()
-
+def cols(table):
+    c, cur = db(), None
     try:
-
+        cur = c.cursor()
         if USE_POSTGRES:
-
-            cursor = connection.cursor(
-                cursor_factory=RealDictCursor
-            )
-
-        else:
-
-            cursor = connection.cursor()
-
-        cursor.execute(
-            query,
-            params or ()
-        )
-
-        result = None
-
-        if fetchone:
-
-            result = cursor.fetchone()
-
-        elif fetchall:
-
-            result = cursor.fetchall()
-
-        if commit:
-
-            connection.commit()
-
-        return result
-
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s", (table,))
+            return {x[0] for x in cur.fetchall()}
+        cur.execute(f"PRAGMA table_info({table})")
+        return {x[1] for x in cur.fetchall()}
     finally:
+        if cur: cur.close()
+        c.close()
 
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-
-
-# ============================================================
-# DATABASE COLUMN HELPERS
-# ============================================================
-
-def get_columns(table_name):
-
-    connection = db_connection()
-
+def add_col(table, name, definition):
+    if name in cols(table): return
+    c, cur = db(), None
     try:
-
-        cursor = connection.cursor()
-
-        if USE_POSTGRES:
-
-            cursor.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_name = %s
-                """,
-                (table_name,)
-            )
-
-            rows = cursor.fetchall()
-
-            return {
-                row[0]
-                for row in rows
-            }
-
-        cursor.execute(
-            "PRAGMA table_info(" +
-            table_name +
-            ")"
-        )
-
-        rows = cursor.fetchall()
-
-        return {
-            row[1]
-            for row in rows
-        }
-
+        cur = c.cursor()
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        c.commit()
+        print("Added missing column:", table, name)
     finally:
-
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-
-
-def add_column_if_missing(
-    table_name,
-    column_name,
-    column_definition
-):
-
-    columns = get_columns(
-        table_name
-    )
-
-    if column_name in columns:
-
-        return
-
-    connection = db_connection()
-
-    try:
-
-        cursor = connection.cursor()
-
-        sql = (
-            "ALTER TABLE "
-            + table_name
-            + " ADD COLUMN "
-            + column_name
-            + " "
-            + column_definition
-        )
-
-        cursor.execute(sql)
-
-        connection.commit()
-
-        print(
-            "Added missing column:",
-            table_name,
-            column_name
-        )
-
-    finally:
-
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-
-
-# ============================================================
-# CREATE DATABASE TABLES
-# ============================================================
+        if cur: cur.close()
+        c.close()
 
 def create_tables():
-
-    connection = db_connection()
-
+    c, cur = db(), None
     try:
-
-        cursor = connection.cursor()
-
+        cur = c.cursor()
         if USE_POSTGRES:
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
-                    credits INTEGER NOT NULL DEFAULT 100,
-                    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-                    blocked BOOLEAN NOT NULL DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS generation_history (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    type TEXT NOT NULL,
-                    prompt TEXT NOT NULL,
-                    credits INTEGER NOT NULL DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS credit_history (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    amount INTEGER NOT NULL,
-                    reason TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
+            cur.execute("""CREATE TABLE IF NOT EXISTS users(
+                id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
+                credits INTEGER NOT NULL DEFAULT 0, is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                blocked BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS generation_history(
+                id SERIAL PRIMARY KEY, user_id INTEGER, type TEXT NOT NULL DEFAULT 'unknown',
+                prompt TEXT NOT NULL DEFAULT '', credits INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS credit_history(
+                id SERIAL PRIMARY KEY, user_id INTEGER, amount INTEGER NOT NULL DEFAULT 0,
+                reason TEXT NOT NULL DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         else:
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
-                    credits INTEGER NOT NULL DEFAULT 100,
-                    is_admin INTEGER NOT NULL DEFAULT 0,
-                    blocked INTEGER NOT NULL DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS generation_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    type TEXT NOT NULL,
-                    prompt TEXT NOT NULL,
-                    credits INTEGER NOT NULL DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS credit_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    amount INTEGER NOT NULL,
-                    reason TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
-        connection.commit()
-
+            cur.execute("""CREATE TABLE IF NOT EXISTS users(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
+                credits INTEGER NOT NULL DEFAULT 0, is_admin INTEGER NOT NULL DEFAULT 0,
+                blocked INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS generation_history(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, type TEXT NOT NULL DEFAULT 'unknown',
+                prompt TEXT NOT NULL DEFAULT '', credits INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS credit_history(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount INTEGER NOT NULL DEFAULT 0,
+                reason TEXT NOT NULL DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+        c.commit()
     finally:
+        if cur: cur.close()
+        c.close()
 
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-
-
-# ============================================================
-# DATABASE MIGRATION
-# ============================================================
-
-def migrate_database():
-
-    print("Starting database migration...")
-
+def migrate():
     create_tables()
-
-    # ========================================================
-    # USERS TABLE
-    # ========================================================
-
     if USE_POSTGRES:
-
-        add_column_if_missing(
-            "users",
-            "is_admin",
-            "BOOLEAN NOT NULL DEFAULT FALSE"
-        )
-
-        add_column_if_missing(
-            "users",
-            "blocked",
-            "BOOLEAN NOT NULL DEFAULT FALSE"
-        )
-
-        add_column_if_missing(
-            "users",
-            "created_at",
-            "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-        )
-
+        specs = [
+            ("users","is_admin","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("users","blocked","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("users","created_at","TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("generation_history","user_id","INTEGER"),
+            ("generation_history","type","TEXT NOT NULL DEFAULT 'unknown'"),
+            ("generation_history","prompt","TEXT NOT NULL DEFAULT ''"),
+            ("generation_history","credits","INTEGER NOT NULL DEFAULT 0"),
+            ("generation_history","created_at","TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("credit_history","user_id","INTEGER"),
+            ("credit_history","amount","INTEGER NOT NULL DEFAULT 0"),
+            ("credit_history","reason","TEXT NOT NULL DEFAULT ''"),
+            ("credit_history","created_at","TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ]
     else:
-
-        add_column_if_missing(
-            "users",
-            "is_admin",
-            "INTEGER NOT NULL DEFAULT 0"
-        )
-
-        add_column_if_missing(
-            "users",
-            "blocked",
-            "INTEGER NOT NULL DEFAULT 0"
-        )
-
-        add_column_if_missing(
-            "users",
-            "created_at",
-            "TIMESTAMP"
-        )
-
-
-    # ========================================================
-    # GENERATION HISTORY
-    # ========================================================
-
-    if USE_POSTGRES:
-
-        add_column_if_missing(
-            "generation_history",
-            "user_id",
-            "INTEGER"
-        )
-
-    else:
-
-        add_column_if_missing(
-            "generation_history",
-            "user_id",
-            "INTEGER DEFAULT 0"
-        )
-
-
-    add_column_if_missing(
-        "generation_history",
-        "type",
-        "TEXT NOT NULL DEFAULT 'unknown'"
-    )
-
-    add_column_if_missing(
-        "generation_history",
-        "prompt",
-        "TEXT NOT NULL DEFAULT ''"
-    )
-
-    add_column_if_missing(
-        "generation_history",
-        "credits",
-        "INTEGER NOT NULL DEFAULT 0"
-    )
-
-    if USE_POSTGRES:
-
-        add_column_if_missing(
-            "generation_history",
-            "created_at",
-            "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-        )
-
-    else:
-
-        add_column_if_missing(
-            "generation_history",
-            "created_at",
-            "TIMESTAMP"
-        )
-
-
-    # ========================================================
-    # CREDIT HISTORY
-    # ========================================================
-
-    if USE_POSTGRES:
-
-        add_column_if_missing(
-            "credit_history",
-            "user_id",
-            "INTEGER"
-        )
-
-    else:
-
-        add_column_if_missing(
-            "credit_history",
-            "user_id",
-            "INTEGER DEFAULT 0"
-        )
-
-
-    add_column_if_missing(
-        "credit_history",
-        "amount",
-        "INTEGER NOT NULL DEFAULT 0"
-    )
-
-    add_column_if_missing(
-        "credit_history",
-        "reason",
-        "TEXT NOT NULL DEFAULT ''"
-    )
-
-    if USE_POSTGRES:
-
-        add_column_if_missing(
-            "credit_history",
-            "created_at",
-            "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-        )
-
-    else:
-
-        add_column_if_missing(
-            "credit_history",
-            "created_at",
-            "TIMESTAMP"
-        )
-
-
+        specs = [
+            ("users","is_admin","INTEGER NOT NULL DEFAULT 0"),
+            ("users","blocked","INTEGER NOT NULL DEFAULT 0"),
+            ("users","created_at","TIMESTAMP"),
+            ("generation_history","user_id","INTEGER DEFAULT 0"),
+            ("generation_history","type","TEXT NOT NULL DEFAULT 'unknown'"),
+            ("generation_history","prompt","TEXT NOT NULL DEFAULT ''"),
+            ("generation_history","credits","INTEGER NOT NULL DEFAULT 0"),
+            ("generation_history","created_at","TIMESTAMP"),
+            ("credit_history","user_id","INTEGER DEFAULT 0"),
+            ("credit_history","amount","INTEGER NOT NULL DEFAULT 0"),
+            ("credit_history","reason","TEXT NOT NULL DEFAULT ''"),
+            ("credit_history","created_at","TIMESTAMP"),
+        ]
+    for t, n, d in specs: add_col(t, n, d)
     print("Database migration completed.")
 
-    # ========================================================
-    # CREDIT HISTORY
-    # ========================================================
-
-    add_column_if_missing(
-        "credit_history",
-        "amount",
-        "INTEGER NOT NULL DEFAULT 0"
-    )
-
-    add_column_if_missing(
-        "credit_history",
-        "reason",
-        "TEXT NOT NULL DEFAULT ''"
-    )
-
-    if USE_POSTGRES:
-
-        add_column_if_missing(
-            "credit_history",
-            "created_at",
-            "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-        )
-
-    else:
-
-        add_column_if_missing(
-            "credit_history",
-            "created_at",
-            "TIMESTAMP"
-        )
-
-
-    print(
-        "Database migration completed."
-    )
-
-
-# ============================================================
-# RUN DATABASE MIGRATION
-# ============================================================
-
-try:
-
-    migrate_database()
-
-except Exception as e:
-
-    print(
-        "DATABASE MIGRATION ERROR:",
-        repr(e)
-    )
-
-    raise
-# ============================================================
-# USER HELPERS
-# ============================================================
-
-def get_user_by_id(user_id):
-
-    placeholder = db_placeholder()
-
-    return db_execute(
-        f"""
-        SELECT
-            id,
-            username,
-            password,
-            credits,
-            is_admin,
-            blocked,
-            created_at
-        FROM users
-        WHERE id = {placeholder}
-        """,
-        (user_id,),
-        fetchone=True
-    )
-
-
-def get_user_by_username(username):
-
-    placeholder = db_placeholder()
-
-    return db_execute(
-        f"""
-        SELECT
-            id,
-            username,
-            password,
-            credits,
-            is_admin,
-            blocked,
-            created_at
-        FROM users
-        WHERE username = {placeholder}
-        """,
-        (username,),
-        fetchone=True
-    )
-
-
-def get_credits(user_id):
-
-    user = get_user_by_id(
-        user_id
-    )
-
-    if not user:
-
-        return 0
-
-    return int(
-        row_value(
-            user,
-            "credits",
-            3,
-            0
-        )
-        or 0
-    )
-
-
-# ============================================================
-# AUTH DECORATORS
-# ============================================================
-
-def login_required(function):
-
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-
-        user_id = session.get(
-            "user_id"
-        )
-
-        if not user_id:
-
-            return jsonify(
-                {
-                    "error":
-                        "Login required."
-                }
-            ), 401
-
-        user = get_user_by_id(
-            user_id
-        )
-
-        if not user:
-
-            session.clear()
-
-            return jsonify(
-                {
-                    "error":
-                        "User session expired."
-                }
-            ), 401
-
-        blocked = row_value(
-            user,
-            "blocked",
-            5,
-            False
-        )
-
-        if blocked:
-
-            session.clear()
-
-            return jsonify(
-                {
-                    "error":
-                        "Your account is blocked."
-                }
-            ), 403
-
-        return function(
-            *args,
-            **kwargs
-        )
-
-    return wrapper
-
-
-def admin_required(function):
-
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-
-        user_id = session.get(
-            "user_id"
-        )
-
-        if not user_id:
-
-            return jsonify(
-                {
-                    "error":
-                        "Login required."
-                }
-            ), 401
-
-        user = get_user_by_id(
-            user_id
-        )
-
-        if not user:
-
-            session.clear()
-
-            return jsonify(
-                {
-                    "error":
-                        "User session expired."
-                }
-            ), 401
-
-        blocked = row_value(
-            user,
-            "blocked",
-            5,
-            False
-        )
-
-        is_admin = row_value(
-            user,
-            "is_admin",
-            4,
-            False
-        )
-
-        if blocked:
-
-            session.clear()
-
-            return jsonify(
-                {
-                    "error":
-                        "Your account is blocked."
-                }
-            ), 403
-
-        if not is_admin:
-
-            return jsonify(
-                {
-                    "error":
-                        "Admin access required."
-                }
-            ), 403
-
-        return function(
-            *args,
-            **kwargs
-        )
-
-    return wrapper
-
-
-# ============================================================
-# ADMIN BOOTSTRAP
-# ============================================================
-
-def make_configured_admin():
-
-    if not ADMIN_USERNAME:
-
-        return
-
-    user = get_user_by_username(
-        ADMIN_USERNAME
-    )
-
-    if not user:
-
-        return
-
-    placeholder = db_placeholder()
-
-    db_execute(
-        f"""
-        UPDATE users
-        SET
-            is_admin = {db_placeholder()},
-            blocked = {db_placeholder()}
-        WHERE username = {placeholder}
-        """,
-        (
-            db_bool(True),
-            db_bool(False),
-            ADMIN_USERNAME
-        ),
-        commit=True
-    )
-
-
-try:
-
-    make_configured_admin()
-
-except Exception as e:
-
-    print(
-        "ADMIN BOOTSTRAP ERROR:",
-        repr(e)
-    )
-
-
-# ============================================================
-# CREDIT HELPERS
-# ============================================================
-
-def add_credits(
-    user_id,
-    amount,
-    reason
-):
-
-    if amount <= 0:
-
-        return False
-
-    placeholder = db_placeholder()
-
-    connection = db_connection()
-
+migrate()
+
+
+# ---------------- HELPERS ----------------
+
+def user_id_by_name(name):
+    p = ph()
+    return q(f"SELECT id,username,password,credits,is_admin,blocked,created_at FROM users WHERE username={p}", (name,), one=True)
+
+def user_id(uid):
+    p = ph()
+    return q(f"SELECT id,username,password,credits,is_admin,blocked,created_at FROM users WHERE id={p}", (uid,), one=True)
+
+def balance(uid):
+    return int(val(user_id(uid), "credits", 3, 0) or 0)
+
+def data():
+    x = request.get_json(silent=True)
+    if isinstance(x, dict): return x
+    if request.form: return request.form.to_dict()
+    raw = request.get_data(as_text=True).strip()
+    return {"prompt": raw, "text": raw} if raw else {}
+
+def login_required(fn):
+    @wraps(fn)
+    def w(*a, **kw):
+        u = user_id(session.get("user_id")) if session.get("user_id") else None
+        if not u: session.clear(); return jsonify(error="Login required."), 401
+        if val(u,"blocked",5,False): session.clear(); return jsonify(error="Your account is blocked."), 403
+        return fn(*a, **kw)
+    return w
+
+def admin_required(fn):
+    @wraps(fn)
+    def w(*a, **kw):
+        u = user_id(session.get("user_id")) if session.get("user_id") else None
+        if not u: session.clear(); return jsonify(error="Login required."), 401
+        if val(u,"blocked",5,False): session.clear(); return jsonify(error="Your account is blocked."), 403
+        if not val(u,"is_admin",4,False): return jsonify(error="Admin access required."), 403
+        return fn(*a, **kw)
+    return w
+
+def add_credits(uid, amount, reason):
+    uid, amount = int(uid), int(amount)
+    if amount <= 0: return False
+    p = ph(); c, cur = db(), None
     try:
-
-        cursor = connection.cursor()
-
-        cursor.execute(
-            f"""
-            UPDATE users
-            SET credits = credits + {placeholder}
-            WHERE id = {placeholder}
-            """,
-            (
-                amount,
-                user_id
-            )
-        )
-
-        cursor.execute(
-            f"""
-            INSERT INTO credit_history
-            (
-                user_id,
-                amount,
-                reason
-            )
-            VALUES
-            (
-                {placeholder},
-                {placeholder},
-                {placeholder}
-            )
-            """,
-            (
-                user_id,
-                amount,
-                reason
-            )
-        )
-
-        connection.commit()
-
-        return True
-
+        cur = c.cursor()
+        cur.execute(f"UPDATE users SET credits=credits+{p} WHERE id={p}", (amount,uid))
+        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid,amount,reason))
+        c.commit(); return True
     except Exception:
-
-        connection.rollback()
-
-        raise
-
+        c.rollback(); raise
     finally:
+        if cur: cur.close()
+        c.close()
 
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-
-
-def use_credits(
-    user_id,
-    amount,
-    reason
-):
-
-    if amount <= 0:
-
-        return False
-
-    placeholder = db_placeholder()
-
-    connection = db_connection()
-
+def use_credits(uid, amount, reason):
+    if uid is None: return False
+    try: uid, amount = int(uid), int(amount)
+    except Exception: return False
+    if amount <= 0: return False
+    p = ph(); c, cur = db(), None
     try:
-
-        cursor = connection.cursor()
-
-        cursor.execute(
-            f"""
-            UPDATE users
-            SET credits = credits - {placeholder}
-            WHERE id = {placeholder}
-              AND credits >= {placeholder}
-            """,
-            (
-                amount,
-                user_id,
-                amount
-            )
-        )
-
-        if cursor.rowcount != 1:
-
-            connection.rollback()
-
-            return False
-
-        cursor.execute(
-            f"""
-            INSERT INTO credit_history
-            (
-                user_id,
-                amount,
-                reason
-            )
-            VALUES
-            (
-                {placeholder},
-                {placeholder},
-                {placeholder}
-            )
-            """,
-            (
-                user_id,
-                -amount,
-                reason
-            )
-        )
-
-        connection.commit()
-
-        return True
-
-    except Exception:
-
-        connection.rollback()
-
-        raise
-
+        cur = c.cursor()
+        cur.execute(f"UPDATE users SET credits=credits-{p} WHERE id={p} AND credits>={p}", (amount,uid,amount))
+        if cur.rowcount != 1:
+            c.rollback(); return False
+        cur.execute(f"INSERT INTO credit_history(user_id,amount,reason) VALUES({p},{p},{p})", (uid,-amount,reason))
+        c.commit(); return True
+    except Exception as e:
+        c.rollback(); print("USE CREDITS ERROR:", repr(e)); return False
     finally:
+        if cur: cur.close()
+        c.close()
 
-        try:
+def save_generation(uid, kind, prompt, cost):
+    p = ph()
+    q(f"INSERT INTO generation_history(user_id,type,prompt,credits) VALUES({p},{p},{p},{p})",
+      (int(uid),kind,prompt,int(cost)), commit=True)
 
-            cursor.close()
+def headers():
+    if not POLLINATIONS_API_KEY: raise RuntimeError("POLLINATIONS_API_KEY is not configured.")
+    return {"Authorization":"Bearer "+POLLINATIONS_API_KEY,"User-Agent":"My-AI-Studio/1.0"}
 
-        except Exception:
-
-            pass
-
-        connection.close()
-
-
-# ============================================================
-# GENERATION HISTORY
-# ============================================================
-
-def save_generation(
-    user_id,
-    generation_type,
-    prompt,
-    credits
-):
-
-    placeholder = db_placeholder()
-
-    db_execute(
-        f"""
-        INSERT INTO generation_history
-        (
-            user_id,
-            type,
-            prompt,
-            credits
-        )
-        VALUES
-        (
-            {placeholder},
-            {placeholder},
-            {placeholder},
-            {placeholder}
-        )
-        """,
-        (
-            user_id,
-            generation_type,
-            prompt,
-            credits
-        ),
-        commit=True
-    )
+# Make configured admin an admin if the account already exists.
+if user_id_by_name(ADMIN_USERNAME):
+    p = ph()
+    q(f"UPDATE users SET is_admin={p}, blocked={p} WHERE username={p}",
+      (True if USE_POSTGRES else 1, False if USE_POSTGRES else 0, ADMIN_USERNAME), commit=True)
 
 
-# ============================================================
-# POLLINATIONS HELPERS
-# ============================================================
-
-def require_pollinations_key():
-
-    if not POLLINATIONS_API_KEY:
-
-        raise RuntimeError(
-            "POLLINATIONS_API_KEY is not configured."
-        )
-
-
-def pollinations_headers():
-
-    require_pollinations_key()
-
-    return {
-        "Authorization":
-            "Bearer "
-            + POLLINATIONS_API_KEY,
-
-        "User-Agent":
-            "My-AI-Studio/1.0"
-    }
-
-
-# ============================================================
-# BASIC ROUTES
-# ============================================================
+# ---------------- ROUTES ----------------
 
 @app.route("/")
-def home():
-
-    return render_template(
-        "index.html"
-    )
-
+def home(): return render_template("index.html")
 
 @app.route("/health")
-def health():
+def health(): return jsonify(status="ok", service="My AI Studio")
 
-    return jsonify(
-        {
-            "status":
-                "ok",
-
-            "service":
-                "My AI Studio"
-        }
-    )
-
-
-# ============================================================
-# REGISTER
-# ============================================================
-
-@app.route(
-    "/register",
-    methods=["POST"]
-)
+@app.route("/register", methods=["POST"])
 def register():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    username = str(
-        data.get(
-            "username",
-            ""
-        )
-    ).strip()
-
-    password = str(
-        data.get(
-            "password",
-            ""
-        )
-    )
-
-    if not username or not password:
-
-        return jsonify(
-            {
-                "error":
-                    "Username and password are required."
-            }
-        ), 400
-
-    if len(username) < 3:
-
-        return jsonify(
-            {
-                "error":
-                    "Username must be at least 3 characters."
-            }
-        ), 400
-
-    if len(password) < 6:
-
-        return jsonify(
-            {
-                "error":
-                    "Password must be at least 6 characters."
-            }
-        ), 400
-
-    existing = get_user_by_username(
-        username
-    )
-
-    if existing:
-
-        return jsonify(
-            {
-                "error":
-                    "Username already exists."
-            }
-        ), 409
-
-    hashed_password = (
-        generate_password_hash(
-            password
-        )
-    )
-
-    placeholder = db_placeholder()
-
-    connection = db_connection()
-
+    d=data(); name=str(d.get("username","")).strip(); pw=str(d.get("password",""))
+    if not name or not pw: return jsonify(error="Username and password are required."),400
+    if len(name)<3: return jsonify(error="Username must be at least 3 characters."),400
+    if len(pw)<6: return jsonify(error="Password must be at least 6 characters."),400
+    if user_id_by_name(name): return jsonify(error="Username already exists."),409
+    p=ph(); c,cur=db(),None
     try:
-
-        cursor = connection.cursor()
-
-        cursor.execute(
-            f"""
-            INSERT INTO users
-            (
-                username,
-                password,
-                credits,
-                is_admin,
-                blocked
-            )
-            VALUES
-            (
-                {placeholder},
-                {placeholder},
-                {placeholder},
-                {placeholder},
-                {placeholder}
-            )
-            """,
-            (
-                username,
-                hashed_password,
-                NEW_USER_CREDITS,
-                db_bool(False),
-                db_bool(False)
-            )
-        )
-
-        connection.commit()
-
-        user = get_user_by_username(
-            username
-        )
-
-        user_id = row_value(
-            user,
-            "id",
-            0
-        )
-
-        add_credits(
-            user_id,
-            NEW_USER_CREDITS,
-            "New account bonus"
-        )
-
-        return jsonify(
-            {
-                "success":
-                    True,
-
-                "message":
-                    "Registration successful."
-            }
-        )
-
+        cur=c.cursor()
+        cur.execute(f"INSERT INTO users(username,password,credits,is_admin,blocked) VALUES({p},{p},{p},{p},{p})",
+                    (name,generate_password_hash(pw),0,False if USE_POSTGRES else 0,False if USE_POSTGRES else 0))
+        c.commit()
     except Exception as e:
-
-        connection.rollback()
-
-        print(
-            "REGISTER ERROR:",
-            repr(e)
-        )
-
-        return jsonify(
-            {
-                "error":
-                    "Registration failed."
-            }
-        ), 500
-
+        c.rollback(); print("REGISTER ERROR:",repr(e)); return jsonify(error="Registration failed."),500
     finally:
+        if cur: cur.close()
+        c.close()
+    u=user_id_by_name(name); add_credits(val(u,"id",0),NEW_USER_CREDITS,"New account bonus")
+    return jsonify(success=True,message="Registration successful.")
 
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-        # ============================================================
-# LOGIN
-# ============================================================
-
-@app.route(
-    "/login",
-    methods=["POST"]
-)
+@app.route("/login", methods=["POST"])
 def login():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    username = str(
-        data.get(
-            "username",
-            ""
-        )
-    ).strip()
-
-    password = str(
-        data.get(
-            "password",
-            ""
-        )
-    )
-
-    if not username or not password:
-
-        return jsonify(
-            {
-                "error":
-                    "Username and password are required."
-            }
-        ), 400
-
-    user = get_user_by_username(
-        username
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error":
-                    "Invalid username or password."
-            }
-        ), 401
-
-    stored_password = row_value(
-        user,
-        "password",
-        2,
-        ""
-    )
-
-    try:
-
-        valid_password = (
-            check_password_hash(
-                stored_password,
-                password
-            )
-        )
-
-    except Exception:
-
-        valid_password = False
-
-    if not valid_password:
-
-        return jsonify(
-            {
-                "error":
-                    "Invalid username or password."
-            }
-        ), 401
-
-    blocked = row_value(
-        user,
-        "blocked",
-        5,
-        False
-    )
-
-    if blocked:
-
-        return jsonify(
-            {
-                "error":
-                    "Your account is blocked."
-            }
-        ), 403
-
-    user_id = row_value(
-        user,
-        "id",
-        0
-    )
-
-    is_admin = row_value(
-        user,
-        "is_admin",
-        4,
-        False
-    )
-
-    session.clear()
-
-    session.permanent = True
-
-    session["user_id"] = int(
-        user_id
-    )
-
-    session["username"] = username
-
-    session["is_admin"] = bool(
-        is_admin
-    )
-
-    session.modified = True
-
-    return jsonify(
-        {
-            "success":
-                True,
-
-            "logged_in":
-                True,
-
-            "username":
-                username,
-
-            "credits":
-                get_credits(user_id),
-
-            "is_admin":
-                bool(is_admin)
-        }
-    )
-
-
-# ============================================================
-# CURRENT USER
-# ============================================================
+    d=data(); name=str(d.get("username","")).strip(); pw=str(d.get("password",""))
+    if not name or not pw: return jsonify(error="Username and password are required."),400
+    u=user_id_by_name(name)
+    if not u: return jsonify(error="Invalid username or password."),401
+    try: ok=check_password_hash(val(u,"password",2,""),pw)
+    except Exception: ok=False
+    if not ok: return jsonify(error="Invalid username or password."),401
+    if val(u,"blocked",5,False): return jsonify(error="Your account is blocked."),403
+    session.clear(); session.permanent=True
+    session["user_id"]=int(val(u,"id",0)); session["username"]=name; session["is_admin"]=bool(val(u,"is_admin",4,False)); session.modified=True
+    return jsonify(success=True,logged_in=True,username=name,credits=balance(val(u,"id",0)),is_admin=bool(val(u,"is_admin",4,False)))
 
 @app.route("/me")
 def me():
+    u=user_id(session.get("user_id")) if session.get("user_id") else None
+    if not u or val(u,"blocked",5,False): session.clear(); return jsonify(logged_in=False)
+    return jsonify(logged_in=True,username=val(u,"username",1,""),credits=val(u,"credits",3,0),is_admin=bool(val(u,"is_admin",4,False)))
 
-    user_id = session.get(
-        "user_id"
-    )
-
-    if not user_id:
-
-        return jsonify(
-            {
-                "logged_in":
-                    False
-            }
-        )
-
-    user = get_user_by_id(
-        user_id
-    )
-
-    if not user:
-
-        session.clear()
-
-        return jsonify(
-            {
-                "logged_in":
-                    False
-            }
-        )
-
-    blocked = row_value(
-        user,
-        "blocked",
-        5,
-        False
-    )
-
-    if blocked:
-
-        session.clear()
-
-        return jsonify(
-            {
-                "logged_in":
-                    False
-            }
-        )
-
-    return jsonify(
-        {
-            "logged_in":
-                True,
-
-            "username":
-                row_value(
-                    user,
-                    "username",
-                    1,
-                    ""
-                ),
-
-            "credits":
-                row_value(
-                    user,
-                    "credits",
-                    3,
-                    0
-                ),
-
-            "is_admin":
-                bool(
-                    row_value(
-                        user,
-                        "is_admin",
-                        4,
-                        False
-                    )
-                )
-        }
-    )
-
-
-# ============================================================
-# LOGOUT
-# ============================================================
-
-@app.route(
-    "/logout",
-    methods=["POST"]
-)
-def logout():
-
-    session.clear()
-
-    return jsonify(
-        {
-            "success":
-                True
-        }
-    )
-
-
-# ============================================================
-# CREDITS
-# ============================================================
+@app.route("/logout", methods=["POST"])
+def logout(): session.clear(); return jsonify(success=True)
 
 @app.route("/credits")
 @login_required
-def use_credits(
-    user_id,
-    amount,
-    reason
-):
+def get_credits(): return jsonify(credits=balance(session["user_id"]))
 
-    # Safety check: logged-in user ID must exist
-    if user_id is None:
-
-        print(
-            "USE CREDITS ERROR: user_id is None"
-        )
-
-        return False
-
-    try:
-
-        user_id = int(user_id)
-        amount = int(amount)
-
-    except Exception:
-
-        print(
-            "USE CREDITS ERROR: invalid user_id or amount"
-        )
-
-        return False
-
-    if amount <= 0:
-
-        return False
-
-    placeholder = db_placeholder()
-
-    connection = db_connection()
-
-    try:
-
-        cursor = connection.cursor()
-
-        # ----------------------------------------------------
-        # Deduct credits only when balance is sufficient
-        # ----------------------------------------------------
-
-        cursor.execute(
-            f"""
-            UPDATE users
-            SET credits = credits - {placeholder}
-            WHERE id = {placeholder}
-              AND credits >= {placeholder}
-            """,
-            (
-                amount,
-                user_id,
-                amount
-            )
-        )
-
-        if cursor.rowcount != 1:
-
-            connection.rollback()
-
-            return False
-
-        # ----------------------------------------------------
-        # Save credit history
-        # ----------------------------------------------------
-
-        cursor.execute(
-            f"""
-            INSERT INTO credit_history
-            (
-                user_id,
-                amount,
-                reason
-            )
-            VALUES
-            (
-                {placeholder},
-                {placeholder},
-                {placeholder}
-            )
-            """,
-            (
-                user_id,
-                -amount,
-                reason
-            )
-        )
-
-        connection.commit()
-
-        print(
-            "CREDITS USED:",
-            user_id,
-            amount,
-            reason
-        )
-
-        return True
-
-    except Exception as e:
-
-        connection.rollback()
-
-        print(
-            "USE CREDITS ERROR:",
-            repr(e)
-        )
-
-        return False
-
-    finally:
-
-        try:
-
-            cursor.close()
-
-        except Exception:
-
-            pass
-
-        connection.close()
-
-# ============================================================
-# AUDIO GENERATION
-# ============================================================
-
-@app.route(
-    "/audio",
-    methods=["POST"]
-)
+@app.route("/generate", methods=["POST"])
 @login_required
-def generate_audio():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    text = str(
-        data.get(
-            "text",
-            ""
-        )
-    ).strip()
-
-    if not text:
-
-        return jsonify(
-            {
-                "error":
-                    "Text is required."
-            }
-        ), 400
-
-    user_id = session.get(
-        "user_id"
-    )
-
-    if get_credits(user_id) < AUDIO_COST:
-
-        return jsonify(
-            {
-                "error":
-                    "Not enough credits."
-            }
-        ), 402
-
-    charged = use_credits(
-        user_id,
-        AUDIO_COST,
-        "Audio generation"
-    )
-
-    if not charged:
-
-        return jsonify(
-            {
-                "error":
-                    "Not enough credits."
-            }
-        ), 402
-
-    filename = (
-        uuid.uuid4().hex
-        + ".mp3"
-    )
-
-    filepath = os.path.join(
-        GENERATED_DIR,
-        filename
-    )
-
+def generate_image():
+    d=data()
+    prompt=str(d.get("prompt",d.get("text",""))).strip()
+    if not prompt: return jsonify(error="Prompt is required."),400
+    uid=session["user_id"]
+    if balance(uid)<IMAGE_COST or not use_credits(uid,IMAGE_COST,"Image generation"):
+        return jsonify(error="Not enough credits."),402
+    filename=uuid.uuid4().hex+".png"; path=os.path.join(GENERATED_DIR,filename)
     try:
-
-        encoded_text = quote(
-            text,
-            safe=""
-        )
-
-        url = (
-            POLLINATIONS_BASE
-            + "/audio/"
-            + encoded_text
-        )
-
-        response = requests.get(
-            url,
-            headers=pollinations_headers(),
-            params={
-                "voice":
-                    "nova"
-            },
-            timeout=300
-        )
-
-        response.raise_for_status()
-
-        with open(
-            filepath,
-            "wb"
-        ) as file:
-
-            file.write(
-                response.content
-            )
-
-        save_generation(
-            user_id,
-            "audio",
-            text,
-            AUDIO_COST
-        )
-
-        return jsonify(
-            {
-                "success":
-                    True,
-
-                "type":
-                    "audio",
-
-                "credits":
-                    get_credits(user_id),
-
-                "url":
-                    "/generated/"
-                    + filename
-            }
-        )
-
+        r=requests.get(POLLINATIONS_BASE+"/image/"+quote(prompt,safe=""),headers=headers(),
+                       params={"model":"black-forest-labs/flux.1-schnell","width":1024,"height":1024,"n":1},timeout=300)
+        r.raise_for_status()
+        open(path,"wb").write(r.content)
+        save_generation(uid,"image",prompt,IMAGE_COST)
+        return jsonify(success=True,type="image",credits=balance(uid),url="/generated/"+filename)
     except Exception as e:
+        print("IMAGE GENERATION ERROR:",repr(e)); add_credits(uid,IMAGE_COST,"Image generation refund")
+        return jsonify(error="Image generation failed."),500
 
-        print(
-            "AUDIO GENERATION ERROR:",
-            repr(e)
-        )
-
-        add_credits(
-            user_id,
-            AUDIO_COST,
-            "Audio generation refund"
-        )
-
-        return jsonify(
-            {
-                "error":
-                    "Audio generation failed."
-            }
-        ), 500
-
-
-# ============================================================
-# VIDEO GENERATION
-# ============================================================
-
-@app.route(
-    "/video",
-    methods=["POST"]
-)
+@app.route("/audio", methods=["POST"])
 @login_required
-def generate_video():
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    prompt = str(
-        data.get(
-            "prompt",
-            ""
-        )
-    ).strip()
-
-    if not prompt:
-
-        return jsonify(
-            {
-                "error":
-                    "Prompt is required."
-            }
-        ), 400
-
-    user_id = session.get(
-        "user_id"
-    )
-
-    if get_credits(user_id) < VIDEO_COST:
-
-        return jsonify(
-            {
-                "error":
-                    "Not enough credits."
-            }
-        ), 402
-
-    charged = use_credits(
-        user_id,
-        VIDEO_COST,
-        "Video generation"
-    )
-
-    if not charged:
-
-        return jsonify(
-            {
-                "error":
-                    "Not enough credits."
-            }
-        ), 402
-
-    filename = (
-        uuid.uuid4().hex
-        + ".mp4"
-    )
-
-    filepath = os.path.join(
-        GENERATED_DIR,
-        filename
-    )
-
+def audio():
+    d=data(); text=str(d.get("text",d.get("prompt",""))).strip()
+    if not text: return jsonify(error="Text is required."),400
+    uid=session["user_id"]
+    if balance(uid)<AUDIO_COST or not use_credits(uid,AUDIO_COST,"Audio generation"): return jsonify(error="Not enough credits."),402
+    filename=uuid.uuid4().hex+".mp3"; path=os.path.join(GENERATED_DIR,filename)
     try:
-
-        encoded_prompt = quote(
-            prompt,
-            safe=""
-        )
-
-        url = (
-            POLLINATIONS_BASE
-            + "/video/"
-            + encoded_prompt
-        )
-
-        response = requests.get(
-            url,
-            headers=pollinations_headers(),
-            params={
-                "model":
-                    "google/veo-3.1-fast",
-
-                "duration":
-                    4,
-
-                "aspectRatio":
-                    "16:9",
-
-                "audio":
-                    "false"
-            },
-            timeout=600
-        )
-
-        response.raise_for_status()
-
-        with open(
-            filepath,
-            "wb"
-        ) as file:
-
-            file.write(
-                response.content
-            )
-
-        save_generation(
-            user_id,
-            "video",
-            prompt,
-            VIDEO_COST
-        )
-
-        return jsonify(
-            {
-                "success":
-                    True,
-
-                "type":
-                    "video",
-
-                "credits":
-                    get_credits(user_id),
-
-                "url":
-                    "/generated/"
-                    + filename
-            }
-        )
-
+        r=requests.get(POLLINATIONS_BASE+"/audio/"+quote(text,safe=""),headers=headers(),params={"voice":"nova"},timeout=300)
+        r.raise_for_status(); open(path,"wb").write(r.content); save_generation(uid,"audio",text,AUDIO_COST)
+        return jsonify(success=True,type="audio",credits=balance(uid),url="/generated/"+filename)
     except Exception as e:
+        print("AUDIO GENERATION ERROR:",repr(e)); add_credits(uid,AUDIO_COST,"Audio generation refund")
+        return jsonify(error="Audio generation failed."),500
 
-        print(
-            "VIDEO GENERATION ERROR:",
-            repr(e)
-        )
+@app.route("/video", methods=["POST"])
+@login_required
+def video():
+    d=data(); prompt=str(d.get("prompt",d.get("text",""))).strip()
+    if not prompt: return jsonify(error="Prompt is required."),400
+    uid=session["user_id"]
+    if balance(uid)<VIDEO_COST or not use_credits(uid,VIDEO_COST,"Video generation"): return jsonify(error="Not enough credits."),402
+    filename=uuid.uuid4().hex+".mp4"; path=os.path.join(GENERATED_DIR,filename)
+    try:
+        r=requests.get(POLLINATIONS_BASE+"/video/"+quote(prompt,safe=""),headers=headers(),
+                       params={"model":"google/veo-3.1-fast","duration":4,"aspectRatio":"16:9","audio":"false"},timeout=600)
+        r.raise_for_status(); open(path,"wb").write(r.content); save_generation(uid,"video",prompt,VIDEO_COST)
+        return jsonify(success=True,type="video",credits=balance(uid),url="/generated/"+filename)
+    except Exception as e:
+        print("VIDEO GENERATION ERROR:",repr(e)); add_credits(uid,VIDEO_COST,"Video generation refund")
+        return jsonify(error="Video generation failed."),500
 
-        add_credits(
-            user_id,
-            VIDEO_COST,
-            "Video generation refund"
-        )
-
-        return jsonify(
-            {
-                "error":
-                    "Video generation failed."
-            }
-        ), 500
-    # ============================================================
-# GENERATED FILES
-# ============================================================
-
-@app.route(
-    "/generated/<path:filename>"
-)
-def generated_file(filename):
-
-    safe_filename = os.path.basename(
-        filename
-    )
-
-    filepath = os.path.join(
-        GENERATED_DIR,
-        safe_filename
-    )
-
-    if not os.path.isfile(filepath):
-
-        return jsonify(
-            {
-                "error":
-                    "File not found."
-            }
-        ), 404
-
-    return send_file(
-        filepath
-    )
-
-
-# ============================================================
-# USER HISTORY
-# ============================================================
+@app.route("/generated/<path:filename>")
+def generated(filename):
+    path=os.path.join(GENERATED_DIR,os.path.basename(filename))
+    if not os.path.isfile(path): return jsonify(error="File not found."),404
+    return send_file(path)
 
 @app.route("/history")
 @login_required
 def history():
-
-    user_id = session.get(
-        "user_id"
-    )
-
-    placeholder = db_placeholder()
-
-    rows = db_execute(
-        f"""
-        SELECT
-            type,
-            prompt,
-            credits,
-            created_at
-        FROM generation_history
-        WHERE user_id = {placeholder}
-        ORDER BY id DESC
-        LIMIT 100
-        """,
-        (user_id,),
-        fetchall=True
-    )
-
-    history_items = []
-
-    for row in rows or []:
-
-        history_items.append(
-            {
-                "type":
-                    row_value(
-                        row,
-                        "type",
-                        0,
-                        ""
-                    ),
-
-                "prompt":
-                    row_value(
-                        row,
-                        "prompt",
-                        1,
-                        ""
-                    ),
-
-                "credits":
-                    row_value(
-                        row,
-                        "credits",
-                        2,
-                        0
-                    ),
-
-                "created_at":
-                    str(
-                        row_value(
-                            row,
-                            "created_at",
-                            3,
-                            ""
-                        )
-                    )
-            }
-        )
-
-    return jsonify(
-        {
-            "history":
-                history_items
-        }
-    )
-
-
-# ============================================================
-# ADMIN STATS
-# ============================================================
+    p=ph()
+    rows=q(f"SELECT type,prompt,credits,created_at FROM generation_history WHERE user_id={p} ORDER BY id DESC LIMIT 100",
+           (session["user_id"],),many=True)
+    return jsonify(history=[{"type":val(r,"type",0,""),"prompt":val(r,"prompt",1,""),"credits":val(r,"credits",2,0),"created_at":str(val(r,"created_at",3,""))} for r in rows or []])
 
 @app.route("/admin/stats")
 @admin_required
 def admin_stats():
-
-    users_row = db_execute(
-        """
-        SELECT COUNT(*) AS total
-        FROM users
-        """,
-        fetchone=True
-    )
-
-    generations_row = db_execute(
-        """
-        SELECT COUNT(*) AS total
-        FROM generation_history
-        """,
-        fetchone=True
-    )
-
-    credits_row = db_execute(
-        """
-        SELECT COALESCE(
-            SUM(credits),
-            0
-        ) AS total
-        FROM users
-        """,
-        fetchone=True
-    )
-
-    blocked_row = db_execute(
-        """
-        SELECT COUNT(*) AS total
-        FROM users
-        WHERE blocked = TRUE
-        """,
-        fetchone=True
-    )
-
-    total_users = row_value(
-        users_row,
-        "total",
-        0,
-        0
-    )
-
-    total_generations = row_value(
-        generations_row,
-        "total",
-        0,
-        0
-    )
-
-    total_credits = row_value(
-        credits_row,
-        "total",
-        0,
-        0
-    )
-
-    blocked_users = row_value(
-        blocked_row,
-        "total",
-        0,
-        0
-    )
-
-    return jsonify(
-        {
-            "total_users":
-                total_users,
-
-            "total_generations":
-                total_generations,
-
-            "total_credits":
-                total_credits,
-
-            "blocked_users":
-                blocked_users
-        }
-    )
-
-
-# ============================================================
-# ADMIN USERS
-# ============================================================
+    a=q("SELECT COUNT(*) total FROM users",one=True); b=q("SELECT COUNT(*) total FROM generation_history",one=True)
+    c=q("SELECT COALESCE(SUM(credits),0) total FROM users",one=True)
+    d=q("SELECT COUNT(*) total FROM users WHERE blocked="+("TRUE" if USE_POSTGRES else "1"),one=True)
+    return jsonify(total_users=val(a,"total",0,0),total_generations=val(b,"total",0,0),total_credits=val(c,"total",0,0),blocked_users=val(d,"total",0,0))
 
 @app.route("/admin/users")
 @admin_required
 def admin_users():
+    rows=q("SELECT id,username,credits,is_admin,blocked,created_at FROM users ORDER BY id DESC",many=True)
+    return jsonify(users=[{"id":val(r,"id",0,0),"username":val(r,"username",1,""),"credits":val(r,"credits",2,0),"is_admin":bool(val(r,"is_admin",3,False)),"blocked":bool(val(r,"blocked",4,False)),"created_at":str(val(r,"created_at",5,""))} for r in rows or []])
 
-    rows = db_execute(
-        """
-        SELECT
-            id,
-            username,
-            credits,
-            is_admin,
-            blocked,
-            created_at
-        FROM users
-        ORDER BY id DESC
-        """,
-        fetchall=True
-    )
-
-    users = []
-
-    for row in rows or []:
-
-        users.append(
-            {
-                "id":
-                    row_value(
-                        row,
-                        "id",
-                        0,
-                        0
-                    ),
-
-                "username":
-                    row_value(
-                        row,
-                        "username",
-                        1,
-                        ""
-                    ),
-
-                "credits":
-                    row_value(
-                        row,
-                        "credits",
-                        2,
-                        0
-                    ),
-
-                "is_admin":
-                    bool(
-                        row_value(
-                            row,
-                            "is_admin",
-                            3,
-                            False
-                        )
-                    ),
-
-                "blocked":
-                    bool(
-                        row_value(
-                            row,
-                            "blocked",
-                            4,
-                            False
-                        )
-                    ),
-
-                "created_at":
-                    str(
-                        row_value(
-                            row,
-                            "created_at",
-                            5,
-                            ""
-                        )
-                    )
-            }
-        )
-
-    return jsonify(
-        {
-            "users":
-                users
-        }
-    )
-
-
-# ============================================================
-# ADMIN CREDIT ADJUSTMENT
-# ============================================================
-
-@app.route(
-    "/admin/credits",
-    methods=["POST"]
-)
+@app.route("/admin/credits", methods=["POST"])
 @admin_required
 def admin_credits():
+    d=data()
+    try: uid=int(d.get("user_id")); amount=int(d.get("amount"))
+    except Exception: return jsonify(error="Invalid user ID or amount."),400
+    reason=str(d.get("reason","Admin credit adjustment")).strip(); u=user_id(uid)
+    if not u: return jsonify(error="User not found."),404
+    if int(val(u,"credits",3,0) or 0)+amount<0: return jsonify(error="Credits cannot become negative."),400
+    ok=add_credits(uid,amount,reason) if amount>0 else use_credits(uid,abs(amount),reason)
+    return jsonify(success=True,credits=balance(uid)) if ok else (jsonify(error="Credit adjustment failed."),400)
 
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    try:
-
-        user_id = int(
-            data.get(
-                "user_id"
-            )
-        )
-
-        amount = int(
-            data.get(
-                "amount"
-            )
-        )
-
-    except Exception:
-
-        return jsonify(
-            {
-                "error":
-                    "Invalid user ID or amount."
-            }
-        ), 400
-
-    reason = str(
-        data.get(
-            "reason",
-            "Admin credit adjustment"
-        )
-    ).strip()
-
-    if amount == 0:
-
-        return jsonify(
-            {
-                "error":
-                    "Amount cannot be zero."
-            }
-        ), 400
-
-    user = get_user_by_id(
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error":
-                    "User not found."
-            }
-        ), 404
-
-    current_credits = int(
-        row_value(
-            user,
-            "credits",
-            3,
-            0
-        )
-        or 0
-    )
-
-    if current_credits + amount < 0:
-
-        return jsonify(
-            {
-                "error":
-                    "Credits cannot become negative."
-            }
-        ), 400
-
-    if amount > 0:
-
-        success = add_credits(
-            user_id,
-            amount,
-            reason
-        )
-
-    else:
-
-        success = use_credits(
-            user_id,
-            abs(amount),
-            reason
-        )
-
-    if not success:
-
-        return jsonify(
-            {
-                "error":
-                    "Credit adjustment failed."
-            }
-        ), 400
-
-    return jsonify(
-        {
-            "success":
-                True,
-
-            "credits":
-                get_credits(user_id)
-        }
-    )
-
-
-# ============================================================
-# ADMIN BLOCK / UNBLOCK
-# ============================================================
-
-@app.route(
-    "/admin/block",
-    methods=["POST"]
-)
+@app.route("/admin/block", methods=["POST"])
 @admin_required
 def admin_block():
+    d=data()
+    try: uid=int(d.get("user_id"))
+    except Exception: return jsonify(error="Invalid user ID."),400
+    u=user_id(uid)
+    if not u: return jsonify(error="User not found."),404
+    if val(u,"username",1,"")==ADMIN_USERNAME: return jsonify(error="Configured admin cannot be blocked."),400
+    blocked=bool(d.get("blocked",True)); p=ph()
+    q(f"UPDATE users SET blocked={p} WHERE id={p}",(blocked if USE_POSTGRES else int(blocked),uid),commit=True)
+    return jsonify(success=True,blocked=blocked)
 
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    try:
-
-        user_id = int(
-            data.get(
-                "user_id"
-            )
-        )
-
-    except Exception:
-
-        return jsonify(
-            {
-                "error":
-                    "Invalid user ID."
-            }
-        ), 400
-
-    blocked = bool(
-        data.get(
-            "blocked",
-            True
-        )
-    )
-
-    user = get_user_by_id(
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error":
-                    "User not found."
-            }
-        ), 404
-
-    username = row_value(
-        user,
-        "username",
-        1,
-        ""
-    )
-
-    if username == ADMIN_USERNAME:
-
-        return jsonify(
-            {
-                "error":
-                    "Configured admin cannot be blocked."
-            }
-        ), 400
-
-    placeholder = db_placeholder()
-
-    db_execute(
-        f"""
-        UPDATE users
-        SET blocked = {placeholder}
-        WHERE id = {placeholder}
-        """,
-        (
-            db_bool(blocked),
-            user_id
-        ),
-        commit=True
-    )
-
-    return jsonify(
-        {
-            "success":
-                True,
-
-            "blocked":
-                blocked
-        }
-    )
-
-
-# ============================================================
-# ADMIN GENERATIONS
-# ============================================================
-
-@app.route(
-    "/admin/generations"
-)
+@app.route("/admin/generations")
 @admin_required
 def admin_generations():
+    rows=q("""SELECT generation_history.type,generation_history.prompt,generation_history.credits,
+              generation_history.created_at,users.username FROM generation_history
+              JOIN users ON users.id=generation_history.user_id
+              ORDER BY generation_history.id DESC LIMIT 500""",many=True)
+    return jsonify(generations=[{"username":val(r,"username",4,""),"type":val(r,"type",0,""),"prompt":val(r,"prompt",1,""),"credits":val(r,"credits",2,0),"created_at":str(val(r,"created_at",3,""))} for r in rows or []])
 
-    rows = db_execute(
-        """
-        SELECT
-            generation_history.type,
-            generation_history.prompt,
-            generation_history.credits,
-            generation_history.created_at,
-            users.username
-        FROM generation_history
-        JOIN users
-            ON users.id =
-               generation_history.user_id
-        ORDER BY
-            generation_history.id DESC
-        LIMIT 500
-        """,
-        fetchall=True
-    )
-
-    generations = []
-
-    for row in rows or []:
-
-        generations.append(
-            {
-                "username":
-                    row_value(
-                        row,
-                        "username",
-                        4,
-                        ""
-                    ),
-
-                "type":
-                    row_value(
-                        row,
-                        "type",
-                        0,
-                        ""
-                    ),
-
-                "prompt":
-                    row_value(
-                        row,
-                        "prompt",
-                        1,
-                        ""
-                    ),
-
-                "credits":
-                    row_value(
-                        row,
-                        "credits",
-                        2,
-                        0
-                    ),
-
-                "created_at":
-                    str(
-                        row_value(
-                            row,
-                            "created_at",
-                            3,
-                            ""
-                        )
-                    )
-            }
-        )
-
-    return jsonify(
-        {
-            "generations":
-                generations
-        }
-    )
-
-
-# ============================================================
-# ADMIN CREDIT HISTORY
-# ============================================================
-
-@app.route(
-    "/admin/credits/history"
-)
+@app.route("/admin/credits/history")
 @admin_required
 def admin_credit_history():
+    rows=q("""SELECT credit_history.amount,credit_history.reason,credit_history.created_at,users.username
+              FROM credit_history JOIN users ON users.id=credit_history.user_id
+              ORDER BY credit_history.id DESC LIMIT 500""",many=True)
+    return jsonify(history=[{"username":val(r,"username",3,""),"amount":val(r,"amount",0,0),"reason":val(r,"reason",1,""),"created_at":str(val(r,"created_at",2,""))} for r in rows or []])
 
-    rows = db_execute(
-        """
-        SELECT
-            credit_history.amount,
-            credit_history.reason,
-            credit_history.created_at,
-            users.username
-        FROM credit_history
-        JOIN users
-            ON users.id =
-               credit_history.user_id
-        ORDER BY
-            credit_history.id DESC
-        LIMIT 500
-        """,
-        fetchall=True
-    )
-
-    history = []
-
-    for row in rows or []:
-
-        history.append(
-            {
-                "username":
-                    row_value(
-                        row,
-                        "username",
-                        3,
-                        ""
-                    ),
-
-                "amount":
-                    row_value(
-                        row,
-                        "amount",
-                        0,
-                        0
-                    ),
-
-                "reason":
-                    row_value(
-                        row,
-                        "reason",
-                        1,
-                        ""
-                    ),
-
-                "created_at":
-                    str(
-                        row_value(
-                            row,
-                            "created_at",
-                            2,
-                            ""
-                        )
-                    )
-            }
-        )
-
-    return jsonify(
-        {
-            "history":
-                history
-        }
-    )
-# ============================================================
-# RECHARGE
-# ============================================================
-
-@app.route(
-    "/recharge",
-    methods=["POST"]
-)
+@app.route("/recharge",methods=["POST"])
 @login_required
-def recharge():
-
-    return jsonify(
-        {
-            "error":
-                "Online payment gateway is not connected yet."
-        }
-    ), 501
-
-
-# ============================================================
-# INFORMATION ROUTES
-# ============================================================
+def recharge(): return jsonify(error="Online payment gateway is not connected yet."),501
 
 @app.route("/about")
-def about():
-
-    return jsonify(
-        {
-            "name":
-                "My AI Studio",
-
-            "description":
-                "AI Image, Video and Audio Studio"
-        }
-    )
-
-
+def about(): return jsonify(name="My AI Studio",description="AI Image, Video and Audio Studio")
 @app.route("/contact")
-def contact():
-
-    return jsonify(
-        {
-            "message":
-                "Contact My AI Studio"
-        }
-    )
-
-
+def contact(): return jsonify(message="Contact My AI Studio")
 @app.route("/privacy")
-def privacy():
-
-    return jsonify(
-        {
-            "privacy":
-                "Privacy information for My AI Studio"
-        }
-    )
-
-
+def privacy(): return jsonify(privacy="Privacy information for My AI Studio")
 @app.route("/terms")
-def terms():
-
-    return jsonify(
-        {
-            "terms":
-                "Terms and conditions for My AI Studio"
-        }
-    )
-
-
+def terms(): return jsonify(terms="Terms and conditions for My AI Studio")
 @app.route("/robots.txt")
-def robots():
-
-    return (
-        "User-agent: *\n"
-        "Allow: /\n"
-    ), 200, {
-        "Content-Type":
-            "text/plain"
-    }
-
-
-# ============================================================
-# ERROR HANDLERS
-# ============================================================
+def robots(): return "User-agent: *\nAllow: /\n",200,{"Content-Type":"text/plain"}
 
 @app.errorhandler(404)
-def not_found(error):
-
-    return jsonify(
-        {
-            "error":
-                "Page not found"
-        }
-    ), 404
-
-
+def e404(e): return jsonify(error="Page not found"),404
 @app.errorhandler(500)
-def internal_error(error):
+def e500(e):
+    print("INTERNAL SERVER ERROR:",repr(e))
+    return jsonify(error="Internal server error"),500
 
-    print(
-        "INTERNAL SERVER ERROR:",
-        repr(error)
-    )
-
-    return jsonify(
-        {
-            "error":
-                "Internal server error"
-        }
-    ), 500
-
-
-# ============================================================
-# START
-# ============================================================
-
-if __name__ == "__main__":
-
-    app.run(
-        host="127.0.0.1",
-        port=5000,
-        debug=True
-    )
+if __name__=="__main__":
+    app.run(host="127.0.0.1",port=5000,debug=True)
